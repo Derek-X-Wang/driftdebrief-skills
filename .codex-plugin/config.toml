@@ -1,0 +1,19 @@
+# DriftDebrief — Codex CLI setup (copy into ~/.codex/config.toml)
+#
+# Codex shares the same MCP server as Claude Code (emit / retrieve / manage
+# debrief cards). Codex does NOT use the Claude Code `Stop` hook, so on Codex the
+# EMIT side is driven by the portable instructions in skills/driftdebrief/SKILL.md
+# (the agent emits via the MCP tools after meaningful work). SYNC is on demand:
+# ask Codex to "sync my DriftDebrief cards" or run the get-open-cards tool.
+#
+# Replace the absolute path with where you cloned this repo (or, once the package
+# is published, use `command = "bunx"` / `args = ["driftdebrief", "mcp"]`).
+
+[mcp_servers.driftdebrief]
+command = "bun"
+args = ["/absolute/path/to/driftdebrief-skills/src/mcp.ts"]
+
+[mcp_servers.driftdebrief.env]
+DRIFTDEBRIEF_API_URL = "https://<your-deployment>.convex.site"
+DRIFTDEBRIEF_TOKEN = "dd_..."
+DRIFTDEBRIEF_AGENT = "codex"

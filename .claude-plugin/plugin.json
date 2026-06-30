@@ -1,0 +1,12 @@
+{
+  "name": "driftdebrief",
+  "version": "0.1.0",
+  "description": "Emit, retrieve, and manage DriftDebrief debrief cards from your coding agent. Ships the MCP server + /dd-sync. The per-turn EMIT hook installs into .claude/settings.json (plugin hooks are unreliable upstream).",
+  "author": {
+    "name": "Derek Wang"
+  },
+  "homepage": "https://github.com/Derek-X-Wang/driftdebrief-skills",
+  "repository": "https://github.com/Derek-X-Wang/driftdebrief-skills",
+  "license": "MIT",
+  "keywords": ["driftdebrief", "mcp", "ai-alignment", "debrief-cards", "memory"]
+}

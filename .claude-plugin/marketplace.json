@@ -1,0 +1,16 @@
+{
+  "name": "driftdebrief",
+  "owner": {
+    "name": "Derek Wang"
+  },
+  "metadata": {
+    "description": "DriftDebrief coding-agent integration for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "driftdebrief",
+      "source": "./",
+      "description": "Emit, retrieve, and manage DriftDebrief debrief cards. Ships the MCP server + /dd-sync; the per-turn EMIT Stop hook installs into .claude/settings.json."
+    }
+  ]
+}

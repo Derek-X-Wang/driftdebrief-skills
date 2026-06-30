@@ -1,0 +1,35 @@
+{
+  "name": "driftdebrief",
+  "version": "0.1.0",
+  "description": "Coding-agent integration for DriftDebrief — emit, retrieve, and manage debrief cards from Claude Code, Codex, Cursor, and other harnesses.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Derek-X-Wang/driftdebrief-skills.git"
+  },
+  "bin": {
+    "driftdebrief": "./src/cli.ts"
+  },
+  "files": [
+    "src",
+    "skills",
+    "commands",
+    "hooks",
+    ".mcp.json",
+    ".claude-plugin",
+    ".codex-plugin"
+  ],
+  "scripts": {
+    "mcp": "bun src/mcp.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0"
+  }
+}

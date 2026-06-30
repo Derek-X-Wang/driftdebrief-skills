@@ -1,0 +1,10 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "groupings": [
+    {
+      "title": "DriftDebrief",
+      "description": "Emit, retrieve, and manage debrief cards to keep the human and the coding agent aligned.",
+      "skills": ["driftdebrief"]
+    }
+  ]
+}
