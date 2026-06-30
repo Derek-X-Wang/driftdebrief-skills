@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { isValidCardTypeSlug } from './contract';
+import { isCardType, isValidCardTypeSlug } from './contract';
 
 import {
   archiveNewCard,
@@ -10,7 +10,7 @@ import {
   renderOpenCardsForContext,
   updateNewCard,
 } from './client';
-import { loadConfig, resolveProjectKey } from './config';
+import { allowUnknownTypes, loadConfig, resolveProjectKey } from './config';
 import { runMcpServer } from './mcp';
 import { runStopHook } from './reflect';
 
@@ -109,10 +109,21 @@ async function main() {
       const type = flag(rest, 'type');
       const title = flag(rest, 'title');
       const body = has(rest, 'stdin') ? await readStdin() : flag(rest, 'body');
-      // Tolerant (ADR-0007): accept any bounded slug, not just canonical CARD_TYPES,
-      // so a separately-versioned producer can emit a type the server added later.
-      if (!isValidCardTypeSlug(type) || !title || !body) {
-        throw new Error('emit requires --type <bounded slug> --title <t> --body <b> (or --stdin)');
+      // Strict producer emit by default (typo guard, ADR-0007 D3). The escape hatch
+      // (--allow-unknown-type / DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES=1) accepts any bounded
+      // slug — for emitting a type the server added but this build doesn't yet vendor.
+      const allowUnknown = has(rest, 'allow-unknown-type') || allowUnknownTypes();
+      if (
+        type === undefined ||
+        !(allowUnknown ? isValidCardTypeSlug(type) : isCardType(type)) ||
+        !title ||
+        !body
+      ) {
+        throw new Error(
+          allowUnknown
+            ? 'emit requires --type <bounded slug> --title <t> --body <b> (or --stdin)'
+            : 'emit requires --type <implementation|change|assumption|decision|constraint|watch_out> --title <t> --body <b> (or --stdin); pass --allow-unknown-type for a non-canonical type',
+        );
       }
       const filesRaw = flag(rest, 'files');
       const result = await emitCard(cfg, {
@@ -239,7 +250,7 @@ async function main() {
           `  bun ${self} stop-hook                 Stop-hook EMIT driver (wire into .claude/settings.json)`,
           `  bun ${self} install                   Print Claude Code setup (MCP + Stop hook)`,
           `  bun ${self} open [--context|--json]   Print unresolved cards for this repo`,
-          `  bun ${self} emit --type T --title X --body Y [--stdin] [--files a,b] [--importance I]`,
+          `  bun ${self} emit --type T --title X --body Y [--stdin] [--files a,b] [--importance I] [--allow-unknown-type]`,
           `  bun ${self} mark-stale --card <id>[,<id>,...] [--from <sha>] [--to <sha>] [--files a,b]`,
           `  bun ${self} update-card --id <id> [--title X] [--body Y] [--type T] [--importance I]`,
           `  bun ${self} archive-card --id <id> --reason <text>`,

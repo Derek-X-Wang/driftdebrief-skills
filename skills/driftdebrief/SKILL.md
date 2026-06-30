@@ -41,9 +41,13 @@ A card the human has **already reviewed** is theirs — never mutate it directly
 
 The server enforces this boundary, but respect it in intent: don't try to update/archive a reviewed card.
 
-## Tolerant inputs
+## Input validation
 
-`type` and `importance` accept any bounded slug — unknown values are stored (type) or fall back to `normal` (importance) with a soft warning, never rejected. Prefer the canonical values above; the tolerance exists so the vocabulary can evolve without breaking you.
+**`type` is strict by default** — emit one of the canonical `CARD_TYPES` above. This is a typo guard at the source (LLMs fat-finger type strings): an off-list value is rejected so you retry with a real one. To emit a type the server added but this plugin build doesn't yet vendor, opt in deliberately with `DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES=1` (or `emit --allow-unknown-type`), which accepts any bounded slug.
+
+`importance` is tolerant — unknown values fall back to `normal` with a soft warning.
+
+The **server's** ingest boundary is tolerant regardless (stores raw, renders unknowns with an UNKNOWN badge); the strictness above is only the producer-side guard. The backend owns the canonical vocabulary (ADR-0007).
 
 ## Syncing
 

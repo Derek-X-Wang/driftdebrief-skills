@@ -26,6 +26,18 @@ export function resolveProjectKey(cwd: string, override?: string): string {
   return cwd;
 }
 
+/**
+ * Producer-side emit is STRICT by default — `type` must be a canonical
+ * CARD_TYPES value (a typo guard at the source; ADR-0007 Decision 3). Set
+ * DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES=1 (or pass `emit --allow-unknown-type`) to
+ * accept any bounded slug instead — the deliberate escape hatch for emitting a
+ * type the server added but this plugin build does not yet vendor. The backend
+ * ingest boundary is tolerant regardless.
+ */
+export function allowUnknownTypes(): boolean {
+  return process.env.DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES === '1';
+}
+
 /** Read config from env. Throws a friendly error if required vars are missing. */
 export function loadConfig(): AgentConfig {
   const apiUrl = process.env.DRIFTDEBRIEF_API_URL;

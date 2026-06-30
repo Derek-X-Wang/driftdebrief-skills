@@ -12,7 +12,7 @@ import {
   renderOpenCardsForContext,
   updateNewCard,
 } from './client';
-import { loadConfig, resolveProjectKey } from './config';
+import { allowUnknownTypes, loadConfig, resolveProjectKey } from './config';
 
 /**
  * DriftDebrief MCP server — the common integration layer (Claude Code, Codex,
@@ -20,6 +20,15 @@ import { loadConfig, resolveProjectKey } from './config';
  */
 export async function runMcpServer(): Promise<void> {
   const cfg = loadConfig();
+  // Strict producer emit by default (typo guard, ADR-0007 D3); the escape hatch
+  // widens the schema to any string and lets the server's tolerant boundary classify it.
+  const emitTypeSchema = allowUnknownTypes()
+    ? z
+        .string()
+        .describe(
+          `${CARD_TYPES.join(' | ')} (canonical). Bounded slug also accepted (DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES=1); unknown types render with an UNKNOWN badge.`,
+        )
+    : z.enum(CARD_TYPES).describe('implementation | change | assumption | decision | constraint | watch_out');
   const server = new McpServer({ name: 'driftdebrief', version: '0.1.0' });
 
   server.registerTool(
@@ -28,11 +37,7 @@ export async function runMcpServer(): Promise<void> {
       description:
         'Emit a DriftDebrief debrief card: one durable thing the human should later understand about what you did, changed, or assumed. Use after meaningful work, especially for assumptions, decisions, hidden constraints, and things likely to be misunderstood later.',
       inputSchema: {
-        type: z
-          .string()
-          .describe(
-            `${CARD_TYPES.join(' | ')} (canonical). Any bounded slug is accepted and stored; unknown types render with an UNKNOWN badge (ADR-0007 tolerant).`,
-          ),
+        type: emitTypeSchema,
         title: z.string().min(1).max(200).describe('Short, scannable headline'),
         body: z.string().min(1).max(8000).describe('The explanation, in markdown'),
         importance: z

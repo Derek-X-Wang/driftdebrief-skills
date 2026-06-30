@@ -21,6 +21,8 @@ export DRIFTDEBRIEF_TOKEN="dd_..."
 export DRIFTDEBRIEF_AGENT="claude-code"   # or codex / cursor / a bounded slug
 ```
 
+Card `type` on emit is **strict by default** (only the canonical `CARD_TYPES` — a typo guard at the source). To emit a type the server added but this plugin build doesn't yet vendor, opt in with `DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES=1` (or `emit --allow-unknown-type`), which accepts any bounded slug. The backend ingest boundary is tolerant regardless.
+
 ---
 
 ## Claude Code (full loop)

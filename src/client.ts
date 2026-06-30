@@ -2,10 +2,11 @@ import type { AgentConfig } from './config';
 
 export interface EmitInput {
   projectKey: string;
-  /** Any bounded slug (ADR-0007 tolerant). Canonical values live in CARD_TYPES;
-   * unknown-but-valid slugs are accepted by the server and render with an UNKNOWN
-   * badge — this is what lets a separately-versioned producer emit a type the
-   * server added after this build. */
+  /** Validated producer-side before this runs: a canonical CARD_TYPES value by
+   * default (typo guard, ADR-0007 D3), or any bounded slug under the
+   * DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES / --allow-unknown-type escape hatch. The
+   * server's ingest boundary is tolerant regardless and renders unknowns with an
+   * UNKNOWN badge. */
   type: string;
   title: string;
   body: string;
