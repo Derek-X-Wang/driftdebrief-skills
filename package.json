@@ -22,7 +22,8 @@
   ],
   "scripts": {
     "mcp": "bun src/mcp.ts",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

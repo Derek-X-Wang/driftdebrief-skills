@@ -6,12 +6,12 @@
 # (the agent emits via the MCP tools after meaningful work). SYNC is on demand:
 # ask Codex to "sync my DriftDebrief cards" or run the get-open-cards tool.
 #
-# Replace the absolute path with where you cloned this repo (or, once the package
-# is published, use `command = "bunx"` / `args = ["driftdebrief", "mcp"]`).
+# Uses the published npm package via bunx. From a clone, use `command = "bun"` /
+# `args = ["/absolute/path/to/driftdebrief-skills/src/mcp.ts"]` instead.
 
 [mcp_servers.driftdebrief]
-command = "bun"
-args = ["/absolute/path/to/driftdebrief-skills/src/mcp.ts"]
+command = "bunx"
+args = ["driftdebrief", "mcp"]
 
 [mcp_servers.driftdebrief.env]
 DRIFTDEBRIEF_API_URL = "https://<your-deployment>.convex.site"

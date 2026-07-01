@@ -30,7 +30,9 @@ async function readStdin(): Promise<string> {
 
 /** Print the Claude Code install instructions (Stop-hook emit + manual /dd-sync). */
 function installHelp(cliPath: string): string {
-  const cmd = `bun ${cliPath}`;
+  // Installed as a package bin (bunx/npm) → recommend the portable `bunx driftdebrief`.
+  // Running from a clone → print the absolute clone path so the commands work verbatim.
+  const cmd = cliPath.includes('node_modules') ? 'bunx driftdebrief' : `bun ${cliPath}`;
   const settings = JSON.stringify(
     {
       hooks: {
@@ -68,7 +70,8 @@ async function main() {
   const [, , command, ...rest] = process.argv;
 
   // Commands that must run WITHOUT API config (they don't touch the API):
-  // the Stop hook fires on every turn and must never throw on a missing token.
+  // the Stop hook fires on every turn and must never throw on a missing token,
+  // and help/usage must work before any env is set up.
   switch (command) {
     case 'stop-hook':
       await runStopHook();
@@ -77,6 +80,20 @@ async function main() {
     case 'hooks':
       process.stdout.write(installHelp(process.argv[1]!));
       return;
+  }
+
+  const CONFIG_COMMANDS = new Set([
+    'mcp',
+    'open',
+    'emit',
+    'mark-stale',
+    'update-card',
+    'archive-card',
+    'propose-change',
+  ]);
+  if (command === undefined || !CONFIG_COMMANDS.has(command)) {
+    printUsage();
+    return;
   }
 
   const cfg = loadConfig();
@@ -239,29 +256,30 @@ async function main() {
       return;
     }
 
-    default: {
-      const self = process.argv[1]!;
-      process.stdout.write(
-        [
-          'DriftDebrief agent CLI',
-          '',
-          'Usage:',
-          `  bun ${self} mcp                       Run the MCP server (Claude Code / Codex / Cursor)`,
-          `  bun ${self} stop-hook                 Stop-hook EMIT driver (wire into .claude/settings.json)`,
-          `  bun ${self} install                   Print Claude Code setup (MCP + Stop hook)`,
-          `  bun ${self} open [--context|--json]   Print unresolved cards for this repo`,
-          `  bun ${self} emit --type T --title X --body Y [--stdin] [--files a,b] [--importance I] [--allow-unknown-type]`,
-          `  bun ${self} mark-stale --card <id>[,<id>,...] [--from <sha>] [--to <sha>] [--files a,b]`,
-          `  bun ${self} update-card --id <id> [--title X] [--body Y] [--type T] [--importance I]`,
-          `  bun ${self} archive-card --id <id> --reason <text>`,
-          `  bun ${self} propose-change --id <id> --proposal <text> [--evidence <text>|--stdin]`,
-          '',
-          'Env: DRIFTDEBRIEF_API_URL (Convex .site URL), DRIFTDEBRIEF_TOKEN (Workspace ingest token)',
-        ].join('\n') + '\n',
-      );
-      return;
-    }
   }
+}
+
+/** Print CLI usage. Must not require API config — help works with no env set. */
+function printUsage(): void {
+  process.stdout.write(
+    [
+      'DriftDebrief agent CLI',
+      '',
+      'Usage:',
+      '  driftdebrief mcp                       Run the MCP server (Claude Code / Codex / Cursor)',
+      '  driftdebrief stop-hook                 Stop-hook EMIT driver (wire into .claude/settings.json)',
+      '  driftdebrief install                   Print Claude Code setup (MCP + Stop hook)',
+      '  driftdebrief open [--context|--json]   Print unresolved cards for this repo',
+      '  driftdebrief emit --type T --title X --body Y [--stdin] [--files a,b] [--importance I] [--allow-unknown-type]',
+      '  driftdebrief mark-stale --card <id>[,<id>,...] [--from <sha>] [--to <sha>] [--files a,b]',
+      '  driftdebrief update-card --id <id> [--title X] [--body Y] [--type T] [--importance I]',
+      '  driftdebrief archive-card --id <id> --reason <text>',
+      '  driftdebrief propose-change --id <id> --proposal <text> [--evidence <text>|--stdin]',
+      '',
+      '(Running from a clone? Substitute `bun src/cli.ts` for `driftdebrief`.)',
+      'Env: DRIFTDEBRIEF_API_URL (Convex .site URL), DRIFTDEBRIEF_TOKEN (Workspace ingest token)',
+    ].join('\n') + '\n',
+  );
 }
 
 main().catch((err) => {

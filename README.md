@@ -22,8 +22,10 @@ claude plugin install driftdebrief
 
 # 2. EMIT hook -> .claude/settings.json (NOT the plugin — plugin hooks are broken upstream)
 #    Merge the Stop block from hooks/stop-hook.settings.json, or run:
-bun src/cli.ts install      # prints the exact snippet + commands
+bunx driftdebrief install   # prints the exact snippet + commands
 ```
+
+The CLI + MCP server are on npm as [`driftdebrief`](https://www.npmjs.com/package/driftdebrief) — `bunx driftdebrief <cmd>` works anywhere Bun is installed (from a clone, substitute `bun src/cli.ts`).
 
 Then set `DRIFTDEBRIEF_API_URL` + `DRIFTDEBRIEF_TOKEN` (mint a token in the app: *Workspace → Ingest tokens*), work normally, and run **`/dd-sync`** when you want to reconcile.
 
