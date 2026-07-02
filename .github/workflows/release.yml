@@ -86,7 +86,19 @@ jobs:
           TMPDIR=$(mktemp -d)
           cd "$TMPDIR"
           printf '{"name":"dd-smoke","private":true}\n' > package.json
-          bun add "@driftdebrief/skills@$VERSION"
+          # `npm view` (metadata endpoint) can see the version minutes before
+          # bun's manifest resolution does — v0.2.0 false-failed on exactly
+          # this gap. Retry the install itself; only a persistent failure is
+          # a real broken release.
+          for i in $(seq 1 8); do
+            if bun add "@driftdebrief/skills@$VERSION"; then break; fi
+            if [ "$i" = "8" ]; then
+              echo "::error::bun add @driftdebrief/skills@$VERSION failed after 8 attempts"
+              exit 1
+            fi
+            echo "bun resolution lagging registry metadata — retry $i/8 in 15s"
+            sleep 15
+          done
           ./node_modules/.bin/driftdebrief | grep -q "DriftDebrief agent CLI"
           echo '{"stop_hook_active":false}' | ./node_modules/.bin/driftdebrief stop-hook | grep -q '"decision":"block"'
           OUT=$(echo '{"stop_hook_active":true}' | ./node_modules/.bin/driftdebrief stop-hook)
