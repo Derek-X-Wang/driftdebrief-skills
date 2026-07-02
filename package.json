@@ -1,6 +1,6 @@
 {
   "name": "@driftdebrief/skills",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },
@@ -29,6 +29,7 @@
     "prepublishOnly": "tsc --noEmit"
   },
   "dependencies": {
+    "@driftdebrief/core": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^4.4.3"
   },

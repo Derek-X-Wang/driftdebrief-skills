@@ -35,12 +35,11 @@ Full per-harness instructions (Codex, Cursor, Gemini, the portable `npx skills` 
 
 ```
 driftdebrief-skills/
-├── src/                          # MCP server + CLI + vendored ingest contract
+├── src/                          # MCP server + CLI
 │   ├── mcp.ts                    # the DriftDebrief MCP server (6 card tools)
 │   ├── cli.ts                    # driftdebrief CLI (mcp | stop-hook | open | emit | ...)
 │   ├── reflect.ts                # the Stop-hook EMIT driver (block+reason, loop-guarded)
-│   ├── client.ts / config.ts     # HTTP client + env config
-│   └── contract.ts               # VENDORED card vocabulary (no dep on the closed app repo)
+│   └── client.ts / config.ts     # HTTP client (types from @driftdebrief/core) + env config
 ├── skills/driftdebrief/SKILL.md  # portable: when + how to emit / manage cards
 ├── commands/dd-sync.md           # /dd-sync slash command
 ├── hooks/stop-hook.settings.json # copy-paste Stop hook for YOUR settings.json
@@ -51,7 +50,7 @@ driftdebrief-skills/
 └── docs/install.md               # per-harness install
 ```
 
-The backend owns the canonical card vocabulary; this repo **vendors** a minimal copy of the ingest contract (`src/contract.ts`) and talks to the backend only over its HTTP API — **no dependency on DriftDebrief's (closed-source) application repo**. The wire contract is additive-only and tolerant, so the two staying loosely in sync is safe.
+The backend owns the canonical card vocabulary and publishes it (plus the zod wire schemas its HTTP routes validate with) as [`@driftdebrief/core`](https://www.npmjs.com/package/@driftdebrief/core), which this repo pins as a normal dependency — the client literally cannot drift from the server's shapes. There is still **no dependency on DriftDebrief's (closed-source) application repo itself**; the wire contract stays additive-only and tolerant, and CI diffs our pinned core against the live `GET /api/contract` so deployed-vs-published skew is loud.
 
 ## Development
 

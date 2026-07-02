@@ -1,68 +1,24 @@
+import type {
+  ArchiveNewCardInput,
+  ArchiveNewCardResponse,
+  EmitInput,
+  EmitResponse,
+  MarkStaleInput,
+  MarkStaleResponse,
+  OpenCard,
+  ProposeCardChangeInput,
+  ProposeCardChangeResponse,
+  UpdateNewCardInput,
+  UpdateNewCardResponse,
+} from '@driftdebrief/core';
+
 import type { AgentConfig } from './config';
 
-export interface EmitInput {
-  projectKey: string;
-  /** Validated producer-side before this runs: a canonical CARD_TYPES value by
-   * default (typo guard, ADR-0007 D3), or any bounded slug under the
-   * DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES / --allow-unknown-type escape hatch. The
-   * server's ingest boundary is tolerant regardless and renders unknowns with an
-   * UNKNOWN badge. */
-  type: string;
-  title: string;
-  body: string;
-  /** Defaults to 'normal'. Unknown values are accepted by the server and stored as 'normal' with a warning. */
-  importance?: string;
-  sessionId?: string;
-  transcriptPath?: string;
-  commitSha?: string;
-  files?: string[];
-}
-
-export interface OpenCard {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  importance: string;
-  state: string;
-  lastAction?: string | null;
-  driftSignalCount: number;
-  // Provenance for the plugin to diff against the working tree (mark_stale, ADR-0006 D4).
-  commitSha?: string | null;
-  files?: string[] | null;
-}
-
-export interface MarkStaleInput {
-  cards: Array<{
-    cardId: string;
-    changedFiles?: string[];
-    fromCommit?: string;
-    toCommit?: string;
-  }>;
-}
-
-export interface UpdateNewCardInput {
-  cardId: string;
-  patch: {
-    title?: string;
-    body?: string;
-    /** Any bounded slug (ADR-0007 tolerant). Unknown values are stored as-is with a warning. */
-    type?: string;
-    /** Any string (ADR-0007 tolerant). Unknown values fall back to 'normal' with a warning. */
-    importance?: string;
-  };
-}
-
-export interface ArchiveNewCardInput {
-  cardId: string;
-  reason: string;
-}
-
-export interface ProposeCardChangeInput {
-  cardId: string;
-  proposal: string;
-  evidence?: string;
-}
+// The wire types (EmitInput, OpenCard, etc.) come from `@driftdebrief/core`
+// (ADR-0009) — the same zod schemas the backend's HTTP routes validate with,
+// so this client can no longer silently drift from the server's shapes.
+// mcp.ts consumes OpenCard for rendering; re-export it for that one consumer.
+export type { OpenCard };
 
 function authHeaders(cfg: AgentConfig): Record<string, string> {
   return { Authorization: `Bearer ${cfg.token}`, 'Content-Type': 'application/json' };
@@ -91,12 +47,21 @@ async function apiFetch<T>(
   return res.json() as T;
 }
 
-/** POST /api/ingest — emit one Debrief Card. */
+/**
+ * POST /api/ingest — emit one Debrief Card. `agent` is deliberately excluded
+ * from the caller-facing input: the client always injects it from
+ * `AgentConfig`, even though the wire schema (`EmitInput` from
+ * `@driftdebrief/core`) accepts it as an optional field.
+ */
 export async function emitCard(
   cfg: AgentConfig,
-  input: EmitInput,
-): Promise<{ id: string; projectId: string; warnings: string[] }> {
-  return apiFetch(cfg, 'POST', '/api/ingest', { agent: cfg.agent, ...input });
+  input: Omit<EmitInput, 'agent'>,
+): Promise<EmitResponse> {
+  // Spread `input` first, then set `agent`: `input`'s static type excludes
+  // `agent`, but a caller that bypasses the type could still smuggle one
+  // through at runtime — putting `agent: cfg.agent` last ensures AgentConfig
+  // always wins rather than being silently overridden.
+  return apiFetch(cfg, 'POST', '/api/ingest', { ...input, agent: cfg.agent });
 }
 
 /** GET /api/cards/open — open / drifted cards for a project. */
@@ -108,10 +73,7 @@ export async function getOpenCards(cfg: AgentConfig, projectKey: string): Promis
  * POST /api/mark-stale — batch-mark cards stale after the plugin detects that their
  * referenced files changed. Returns counts of how many were found and updated.
  */
-export async function markStale(
-  cfg: AgentConfig,
-  input: MarkStaleInput,
-): Promise<{ marked: number; skipped: number }> {
+export async function markStale(cfg: AgentConfig, input: MarkStaleInput): Promise<MarkStaleResponse> {
   return apiFetch(cfg, 'POST', '/api/mark-stale', input);
 }
 
@@ -122,7 +84,7 @@ export async function markStale(
 export async function updateNewCard(
   cfg: AgentConfig,
   input: UpdateNewCardInput,
-): Promise<{ found: boolean; updated: boolean; warnings: string[] }> {
+): Promise<UpdateNewCardResponse> {
   return apiFetch(cfg, 'POST', '/api/cards/update', input);
 }
 
@@ -133,7 +95,7 @@ export async function updateNewCard(
 export async function archiveNewCard(
   cfg: AgentConfig,
   input: ArchiveNewCardInput,
-): Promise<{ found: boolean; archived: boolean; warning?: string }> {
+): Promise<ArchiveNewCardResponse> {
   return apiFetch(cfg, 'POST', '/api/cards/archive', input);
 }
 
@@ -145,7 +107,7 @@ export async function archiveNewCard(
 export async function proposeCardChange(
   cfg: AgentConfig,
   input: ProposeCardChangeInput,
-): Promise<{ found: boolean; eventId?: string }> {
+): Promise<ProposeCardChangeResponse> {
   return apiFetch(cfg, 'POST', '/api/cards/propose-change', input);
 }
 
@@ -153,7 +115,12 @@ export async function proposeCardChange(
 export function renderOpenCardsForContext(cards: OpenCard[]): string {
   if (cards.length === 0) return '';
   const lines = cards.map((c) => {
-    const flag = c.driftSignalCount > 0 ? ' [DRIFT: marked wrong]' : '';
+    // Use openDriftSignalCount (the live "drift still open" counter), not
+    // driftSignalCount (all-time history) — once a human confirms a resync,
+    // openDriftSignalCount drops to 0 even though driftSignalCount stays > 0,
+    // and this flag must not keep flagging a card as active drift after that
+    // (ADR-0009 Decision 4).
+    const flag = c.openDriftSignalCount > 0 ? ' [DRIFT: marked wrong]' : '';
     return `- (${c.type}, ${c.importance}, ${c.state}${flag}) ${c.title}\n    ${c.body.replace(/\n/g, ' ').slice(0, 280)}`;
   });
   return [

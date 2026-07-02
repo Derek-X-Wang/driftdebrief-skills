@@ -1,4 +1,4 @@
-import { CARD_TYPES, IMPORTANCE_LEVELS } from './contract';
+import { CARD_TYPES, IMPORTANCE_LEVELS } from '@driftdebrief/core';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';

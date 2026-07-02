@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { isCardType, isValidCardTypeSlug } from './contract';
+import { isCardType, isValidCardTypeSlug } from '@driftdebrief/core';
 
 import {
   archiveNewCard,

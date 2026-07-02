@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 /**
- * Contract drift check — compares the VENDORED contract (src/contract.ts)
+ * Contract drift check — compares the pinned `@driftdebrief/core` dependency
  * against the backend's canonical `GET /api/contract` discovery endpoint.
  *
- * Per ADR-0006 D2 / ADR-0007, the vendored copy is advisory and drift is SAFE
- * (the backend's tolerant ingest boundary is the actual safety mechanism).
- * This check exists to make drift LOUD instead of silent: when the backend
- * vocabulary moves, CI here goes red and we bump the vendored copy — no
- * release-cadence coupling, no shared package.
+ * Per ADR-0009 D6, this covers the runtime axis the shared package cannot:
+ * the DEPLOYED backend and the PUBLISHED core we pin can still skew (deploy
+ * without publish, publish without bump). Drift is SAFE (the backend's
+ * tolerant ingest boundary is the actual safety mechanism, ADR-0007); this
+ * check just makes it LOUD — when it goes red, bump the core dependency.
  *
  * Run: bun scripts/check-contract-drift.ts
  * Override the endpoint with DRIFTDEBRIEF_CONTRACT_URL (defaults to prod).
@@ -20,7 +20,7 @@ import {
   CARD_TYPE_SLUG_RE,
   CARD_TYPES,
   IMPORTANCE_LEVELS,
-} from '../src/contract';
+} from '@driftdebrief/core';
 
 const URL =
   process.env.DRIFTDEBRIEF_CONTRACT_URL ??
@@ -40,7 +40,7 @@ function diffList(name: string, server: string[], vendored: readonly string[]): 
   const missing = server.filter((v) => !vendored.includes(v));
   const extra = vendored.filter((v) => !server.includes(v));
   if (missing.length) {
-    problems.push(`${name}: server has values the vendored copy lacks: ${missing.join(', ')} — bump src/contract.ts`);
+    problems.push(`${name}: server has values our pinned @driftdebrief/core lacks: ${missing.join(', ')} — bump the dependency`);
   }
   if (extra.length) {
     problems.push(`${name}: vendored copy has values the server lacks: ${extra.join(', ')} — backend-first rule violated?`);
@@ -78,4 +78,4 @@ if (problems.length) {
   for (const p of problems) console.error(`  ✗ ${p}`);
   process.exit(1);
 }
-console.log(`Vendored contract matches server contract v${server.version} (${URL}).`);
+console.log(`Pinned @driftdebrief/core matches server contract v${server.version} (${URL}).`);
