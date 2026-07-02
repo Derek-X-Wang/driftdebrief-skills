@@ -60,9 +60,18 @@ jobs:
           fi
 
       # publishConfig.access=public is in package.json; the npm CLI picks up
-      # the OIDC token automatically under Trusted Publishing.
-      - name: Publish
-        run: npm publish
+      # the OIDC token automatically under Trusted Publishing. Skip when the
+      # version is already live so job RERUNS (e.g. after a smoke-test flake)
+      # don't die on "cannot publish over previously published versions".
+      - name: Publish (skip if version already on npm)
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$(npm view "@driftdebrief/skills@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "@driftdebrief/skills@$VERSION already published — skipping."
+            exit 0
+          fi
+          npm publish
 
       # Post-publish smoke test from a consumer's perspective: propagation can
       # lag minutes after publish returns, so poll first (a WAIT, not a gate),
