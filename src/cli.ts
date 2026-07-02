@@ -30,9 +30,9 @@ async function readStdin(): Promise<string> {
 
 /** Print the Claude Code install instructions (Stop-hook emit + manual /dd-sync). */
 function installHelp(cliPath: string): string {
-  // Installed as a package bin (bunx/npm) → recommend the portable `bunx driftdebrief`.
+  // Installed as a package bin (bunx/npm) → recommend the portable scoped form.
   // Running from a clone → print the absolute clone path so the commands work verbatim.
-  const cmd = cliPath.includes('node_modules') ? 'bunx driftdebrief' : `bun ${cliPath}`;
+  const cmd = cliPath.includes('node_modules') ? 'bunx @driftdebrief/skills' : `bun ${cliPath}`;
   const settings = JSON.stringify(
     {
       hooks: {

@@ -3,7 +3,7 @@
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "bunx driftdebrief stop-hook" }
+          { "type": "command", "command": "bunx @driftdebrief/skills stop-hook" }
         ]
       }
     ]

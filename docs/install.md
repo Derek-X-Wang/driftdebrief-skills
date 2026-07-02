@@ -48,7 +48,7 @@ Merge this into your project `.claude/settings.json` (or `~/.claude/settings.jso
 {
   "hooks": {
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "bunx driftdebrief stop-hook" }] }
+      { "hooks": [{ "type": "command", "command": "bunx @driftdebrief/skills stop-hook" }] }
     ]
   }
 }
@@ -77,7 +77,7 @@ Any harness that supports MCP servers + agent instruction files can use DriftDeb
 1. Register the MCP server: `command = bun`, `args = [<path>/src/mcp.ts]`, with the `DRIFTDEBRIEF_*` env.
 2. Install the portable instructions so the agent knows when/how to emit (see the skills fallback below).
 
-If the harness has a reliable post-response hook, wire it to `bunx driftdebrief stop-hook` for automated EMIT the same way Claude Code does.
+If the harness has a reliable post-response hook, wire it to `bunx @driftdebrief/skills stop-hook` for automated EMIT the same way Claude Code does.
 
 ---
 

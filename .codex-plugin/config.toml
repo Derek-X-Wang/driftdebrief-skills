@@ -11,7 +11,7 @@
 
 [mcp_servers.driftdebrief]
 command = "bunx"
-args = ["driftdebrief", "mcp"]
+args = ["@driftdebrief/skills", "mcp"]
 
 [mcp_servers.driftdebrief.env]
 DRIFTDEBRIEF_API_URL = "https://<your-deployment>.convex.site"
