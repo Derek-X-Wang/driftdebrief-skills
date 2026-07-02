@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# `id-token: write` is the OIDC token that npm's Trusted Publishing verifies
+# against the repo + workflow configured on the @driftdebrief/skills package.
+# No long-lived NPM_TOKEN stored anywhere — each run mints a short-lived token.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.5"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      # Trusted Publishing requires npm >= 11.5.1; Node 22 bundles 10.9.2.
+      # Install to a fresh user prefix (self-replacing the toolcache npm breaks
+      # mid-upgrade, and corepack's shim loses the PATH race) — pattern proven
+      # in rxweave's release workflow.
+      - name: Install npm >= 11.5.1 (user-prefix to avoid self-replace)
+        run: |
+          npm config set prefix "$HOME/.npm-global"
+          npm install -g npm@11.5.1
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+
+      - name: Verify npm version
+        run: |
+          which npm
+          npm --version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run check-types
+
+      - name: Assert tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF#refs/tags/v}"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag v$TAG != package.json version $VERSION — bump package.json before tagging"
+            exit 1
+          fi
+
+      # publishConfig.access=public is in package.json; the npm CLI picks up
+      # the OIDC token automatically under Trusted Publishing.
+      - name: Publish
+        run: npm publish
+
+      # Post-publish smoke test from a consumer's perspective: propagation can
+      # lag minutes after publish returns, so poll first (a WAIT, not a gate),
+      # then install cold and exercise the bin + the stop-hook contract.
+      - name: Smoke-test published package
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Waiting for @driftdebrief/skills@$VERSION to propagate on npm..."
+          for i in $(seq 1 24); do
+            if [ "$(npm view "@driftdebrief/skills@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+              echo "propagated after ~$(( (i - 1) * 15 ))s"
+              break
+            fi
+            if [ "$i" = "24" ]; then
+              echo "::error::@driftdebrief/skills@$VERSION not visible on npm after 360s"
+              exit 1
+            fi
+            sleep 15
+          done
+          TMPDIR=$(mktemp -d)
+          cd "$TMPDIR"
+          printf '{"name":"dd-smoke","private":true}\n' > package.json
+          bun add "@driftdebrief/skills@$VERSION"
+          ./node_modules/.bin/driftdebrief | grep -q "DriftDebrief agent CLI"
+          echo '{"stop_hook_active":false}' | ./node_modules/.bin/driftdebrief stop-hook | grep -q '"decision":"block"'
+          OUT=$(echo '{"stop_hook_active":true}' | ./node_modules/.bin/driftdebrief stop-hook)
+          test -z "$OUT" || { echo "::error::stop-hook continuation must allow the stop"; exit 1; }
