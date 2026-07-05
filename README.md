@@ -27,7 +27,7 @@ bunx @driftdebrief/skills install   # prints the exact snippet + commands
 
 The CLI + MCP server are on npm as [`@driftdebrief/skills`](https://www.npmjs.com/package/@driftdebrief/skills) — `bunx @driftdebrief/skills <cmd>` works anywhere Bun is installed (from a clone, substitute `bun src/cli.ts`).
 
-Then set `DRIFTDEBRIEF_API_URL` + `DRIFTDEBRIEF_TOKEN` (mint a token in the app: *Workspace → Ingest tokens*), work normally, and run **`/dd-sync`** when you want to reconcile.
+Then set your environment — either the bare `DRIFTDEBRIEF_API_URL` + `DRIFTDEBRIEF_TOKEN` pair, or (if you switch between dev and prod deployments) the `_DEV`/`_PROD` profile pairs with `DRIFTDEBRIEF_ENV=dev|prod` selecting between them (unset defaults to **prod**; pin dev per-repo via `.claude/settings.json` env). Mint tokens in the app: *Workspace → Ingest tokens*. Verify with `bunx @driftdebrief/skills env`. Work normally, run **`/dd-sync`** to reconcile.
 
 Full per-harness instructions (Codex, Cursor, Gemini, the portable `npx skills` fallback): **[`docs/install.md`](docs/install.md)**.
 

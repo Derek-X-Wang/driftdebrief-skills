@@ -13,13 +13,29 @@ The MCP server (emit + manage tools) is shared by every harness. How EMIT is *tr
 2. A Workspace **ingest token** — mint one in the app under *Workspace → Ingest tokens*.
 3. [Bun](https://bun.sh) installed (the CLI + MCP server run on Bun).
 
-Set these in your environment (shell profile, or the harness's `env` block):
+Set these in your environment (shell profile, or the harness's `env` block).
+
+**Recommended — profile pairs + one switch** (for anyone who works against both a dev and a prod deployment):
+
+```sh
+export DRIFTDEBRIEF_API_URL_PROD="https://<prod-deployment>.convex.site"
+export DRIFTDEBRIEF_TOKEN_PROD="dd_..."
+export DRIFTDEBRIEF_API_URL_DEV="https://<dev-deployment>.convex.site"
+export DRIFTDEBRIEF_TOKEN_DEV="dd_..."
+# DRIFTDEBRIEF_ENV=dev|prod selects the pair. Unset -> prod (real cards belong
+# in prod; dev data is disposable). Pin dev per-repo instead of globally, e.g.
+# in that repo's .claude/settings.json:  "env": { "DRIFTDEBRIEF_ENV": "dev" }
+export DRIFTDEBRIEF_AGENT="claude-code"   # or codex / cursor / a bounded slug
+```
+
+**Single environment** (no switching): just set the bare pair — it takes precedence over the profiles:
 
 ```sh
 export DRIFTDEBRIEF_API_URL="https://<deployment>.convex.site"
 export DRIFTDEBRIEF_TOKEN="dd_..."
-export DRIFTDEBRIEF_AGENT="claude-code"   # or codex / cursor / a bounded slug
 ```
+
+Check what resolved at any time with **`bunx @driftdebrief/skills env`** — prints the selected environment (`dev`/`prod`/`custom`, whether it was defaulted), API URL, masked token, agent, and the auto-detected projectKey.
 
 Card `type` on emit is **strict by default** (only the canonical `CARD_TYPES` — a typo guard at the source). To emit a type the server added but this plugin build doesn't yet vendor, opt in with `DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES=1` (or `emit --allow-unknown-type`), which accepts any bounded slug. The backend ingest boundary is tolerant regardless.
 

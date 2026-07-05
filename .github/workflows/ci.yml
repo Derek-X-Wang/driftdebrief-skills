@@ -25,6 +25,9 @@ jobs:
       - name: Typecheck
         run: bun run check-types
 
+      - name: Unit tests
+        run: bun run test:once
+
       - name: Contract drift check (vendored src/contract.ts vs prod GET /api/contract)
         run: bun scripts/check-contract-drift.ts
 

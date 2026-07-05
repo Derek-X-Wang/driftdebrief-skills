@@ -10,7 +10,7 @@ import {
   renderOpenCardsForContext,
   updateNewCard,
 } from './client';
-import { allowUnknownTypes, loadConfig, resolveProjectKey } from './config';
+import { allowUnknownTypes, loadConfig, resolveEnv, resolveProjectKey } from './config';
 import { runMcpServer } from './mcp';
 import { runStopHook } from './reflect';
 
@@ -80,6 +80,25 @@ async function main() {
     case 'hooks':
       process.stdout.write(installHelp(process.argv[1]!));
       return;
+    case 'env': {
+      // Diagnostic: print what the config WOULD resolve to, without throwing —
+      // this must work (and be useful) precisely when config is broken.
+      const r = resolveEnv();
+      const mask = (t?: string) =>
+        t ? `${t.slice(0, 3)}…${t.slice(-4)} (${t.length} chars)` : '(not set)';
+      process.stdout.write(
+        [
+          `selected:   ${r.selected}${r.defaulted ? ' (defaulted — set DRIFTDEBRIEF_ENV=dev|prod to pin)' : ''}`,
+          `apiUrl:     ${r.apiUrl ?? '(not set)'}`,
+          `token:      ${mask(r.token)}`,
+          `agent:      ${process.env.DRIFTDEBRIEF_AGENT ?? 'claude-code (default)'}`,
+          `projectKey: ${resolveProjectKey(process.cwd())}${process.env.DRIFTDEBRIEF_PROJECT_KEY ? ' (from DRIFTDEBRIEF_PROJECT_KEY override)' : ''}`,
+          ...(r.error ? ['', `⚠ ${r.error}`] : []),
+        ].join('\n') + '\n',
+      );
+      if (r.error) process.exit(1);
+      return;
+    }
   }
 
   const CONFIG_COMMANDS = new Set([
@@ -152,6 +171,9 @@ async function main() {
         files: filesRaw ? filesRaw.split(',').map((f) => f.trim()) : undefined,
         commitSha: flag(rest, 'commit'),
       });
+      // Surface server warnings (unknown type/importance, created-new-project
+      // diagnostic) — soft 2xx signals that must not be silently dropped.
+      for (const w of result.warnings) process.stderr.write(`Warning: ${w}\n`);
       process.stdout.write(`Emitted ${result.id}\n`);
       return;
     }
@@ -269,6 +291,7 @@ function printUsage(): void {
       '  driftdebrief mcp                       Run the MCP server (Claude Code / Codex / Cursor)',
       '  driftdebrief stop-hook                 Stop-hook EMIT driver (wire into .claude/settings.json)',
       '  driftdebrief install                   Print Claude Code setup (MCP + Stop hook)',
+      '  driftdebrief env                       Print the resolved environment (dev/prod/custom, URL, token masked)',
       '  driftdebrief open [--context|--json]   Print unresolved cards for this repo',
       '  driftdebrief emit --type T --title X --body Y [--stdin] [--files a,b] [--importance I] [--allow-unknown-type]',
       '  driftdebrief mark-stale --card <id>[,<id>,...] [--from <sha>] [--to <sha>] [--files a,b]',

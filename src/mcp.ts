@@ -63,8 +63,11 @@ export async function runMcpServer(): Promise<void> {
         files: args.files,
         commitSha: args.commitSha,
       });
+      // Surface server warnings (unknown type/importance, created-new-project
+      // diagnostic) so the agent can react — e.g. fix a typo'd projectKey.
+      const warnText = result.warnings.length ? ` Warnings: ${result.warnings.join('; ')}` : '';
       return {
-        content: [{ type: 'text', text: `Emitted card ${result.id} to project ${projectKey}.` }],
+        content: [{ type: 'text', text: `Emitted card ${result.id} to project ${projectKey}.${warnText}` }],
       };
     },
   );

@@ -1,6 +1,6 @@
 {
   "name": "@driftdebrief/skills",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publishConfig": {
     "access": "public"
   },
@@ -26,6 +26,7 @@
   "scripts": {
     "mcp": "bun src/mcp.ts",
     "check-types": "tsc --noEmit",
+    "test:once": "vitest run",
     "prepublishOnly": "tsc --noEmit"
   },
   "dependencies": {
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.9"
   }
 }
