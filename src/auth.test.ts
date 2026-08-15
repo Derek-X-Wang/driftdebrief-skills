@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -228,6 +235,57 @@ describe('OAuth credentials', () => {
     await expect(login).rejects.toThrow('missing dd_ingest_token');
     expect((await callbackResponse!).status).toBe(500);
     expect(existsSync(credentialsPath)).toBe(false);
+  });
+
+  it('backs up a corrupted credentials file before a successful login and warns', async () => {
+    const corruptedContents =
+      '{"version":1,"credentials":{"https://dev.driftdebrief.derekxwang.com":{"dd_ingest_token":"dd_dev_recoverable"}}';
+    writeFileSync(credentialsPath, corruptedContents);
+    const warnings: string[] = [];
+    let callbackResponse: Promise<Response> | undefined;
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return Response.json({
+          authorization_endpoint: 'https://auth.example/authorize',
+          token_endpoint: 'https://auth.example/token',
+          registration_endpoint: 'https://auth.example/register',
+        });
+      }
+      if (url === 'https://auth.example/register') return Response.json({ client_id: 'client' });
+      if (url === 'https://auth.example/token') {
+        return Response.json({ dd_ingest_token: 'dd_new_prod' });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as unknown as typeof fetch;
+
+    await loginEnvironment('prod', {
+      credentialsPath,
+      fetchImpl,
+      onWarning: (message) => warnings.push(message),
+      openBrowser: async (url) => {
+        const authorizationUrl = new URL(url);
+        const callbackUrl = new URL(authorizationUrl.searchParams.get('redirect_uri')!);
+        callbackUrl.searchParams.set('state', authorizationUrl.searchParams.get('state')!);
+        callbackUrl.searchParams.set('code', 'authorization-code');
+        callbackResponse = fetch(callbackUrl);
+        return true;
+      },
+    });
+
+    expect((await callbackResponse!).status).toBe(200);
+    const backupName = readdirSync(directory).find((name) =>
+      name.startsWith('credentials.json.corrupt-'),
+    );
+    expect(backupName).toBeTruthy();
+    const backupPath = join(directory, backupName!);
+    expect(readFileSync(backupPath, 'utf8')).toBe(corruptedContents);
+    expect(warnings).toEqual([
+      expect.stringContaining(`preserved at ${backupPath}`),
+    ]);
+    expect(readCredentialsFile(credentialsPath).credentials[OAUTH_BASE_URLS.prod]).toMatchObject({
+      dd_ingest_token: 'dd_new_prod',
+    });
   });
 
   it('times out an abandoned browser login without writing credentials', async () => {

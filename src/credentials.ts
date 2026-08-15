@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -37,6 +38,11 @@ export interface CredentialsFile {
   credentials: Record<string, StoredCredential>;
 }
 
+interface CredentialsReadResult {
+  store: CredentialsFile;
+  corrupted: boolean;
+}
+
 function emptyCredentialsFile(): CredentialsFile {
   return { version: 1, credentials: {} };
 }
@@ -47,39 +53,55 @@ export function getCredentialsPath(env: NodeJS.ProcessEnv = process.env): string
   return join(configHome, 'driftdebrief', 'credentials.json');
 }
 
-/**
- * Missing, malformed, and schema-incompatible files behave like an empty
- * store. Read/permission errors are rethrown so `auth login` never clobbers a
- * credentials file that merely could not be read.
- */
-export function readCredentialsFile(path = getCredentialsPath()): CredentialsFile {
+function readCredentialsFileResult(path: string): CredentialsReadResult {
   let raw: string;
   try {
     raw = readFileSync(path, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyCredentialsFile();
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { store: emptyCredentialsFile(), corrupted: false };
+    }
     throw error;
   }
 
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object') return emptyCredentialsFile();
+    if (!parsed || typeof parsed !== 'object') {
+      return { store: emptyCredentialsFile(), corrupted: true };
+    }
     const candidate = parsed as Partial<CredentialsFile>;
     if (candidate.version !== 1 || !candidate.credentials || typeof candidate.credentials !== 'object') {
-      return emptyCredentialsFile();
+      return { store: emptyCredentialsFile(), corrupted: true };
     }
 
     const credentials: Record<string, StoredCredential> = {};
+    let corrupted = false;
     for (const [baseUrl, value] of Object.entries(candidate.credentials)) {
-      if (!value || typeof value !== 'object') continue;
+      if (!value || typeof value !== 'object') {
+        corrupted = true;
+        continue;
+      }
       const entry = value as Partial<StoredCredential>;
-      if (!entry.dd_ingest_token || !entry.client_id || !entry.created_at) continue;
+      if (
+        typeof entry.dd_ingest_token !== 'string' ||
+        !entry.dd_ingest_token ||
+        typeof entry.client_id !== 'string' ||
+        !entry.client_id ||
+        typeof entry.created_at !== 'string' ||
+        !entry.created_at
+      ) {
+        corrupted = true;
+        continue;
+      }
 
       const environment = (Object.entries(OAUTH_BASE_URLS) as [DriftEnvironment, string][]).find(
         ([, oauthBaseUrl]) => oauthBaseUrl === baseUrl,
       )?.[0];
       const apiUrl = environment ? API_BASE_URLS[environment] : entry.apiUrl;
-      if (!apiUrl) continue;
+      if (typeof apiUrl !== 'string' || !apiUrl) {
+        corrupted = true;
+        continue;
+      }
 
       credentials[baseUrl] = {
         apiUrl,
@@ -89,10 +111,36 @@ export function readCredentialsFile(path = getCredentialsPath()): CredentialsFil
         ...(entry.workspace === undefined ? {} : { workspace: entry.workspace }),
       };
     }
-    return { version: 1, credentials };
+    return { store: { version: 1, credentials }, corrupted };
   } catch {
-    return emptyCredentialsFile();
+    return { store: emptyCredentialsFile(), corrupted: true };
   }
+}
+
+/**
+ * Missing, malformed, and schema-incompatible files behave like an empty
+ * store for read-only consumers. Read/permission errors are rethrown.
+ */
+export function readCredentialsFile(path = getCredentialsPath()): CredentialsFile {
+  return readCredentialsFileResult(path).store;
+}
+
+/**
+ * Load credentials for a mutation. An invalid file is atomically moved aside
+ * first so a successful login cannot destroy bytes that may be recoverable.
+ */
+export function prepareCredentialsFileWrite(
+  path = getCredentialsPath(),
+): { store: CredentialsFile; corruptBackupPath?: string } {
+  const result = readCredentialsFileResult(path);
+  if (!result.corrupted) return { store: result.store };
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  let backupPath = `${path}.corrupt-${timestamp}`;
+  if (existsSync(backupPath)) backupPath = `${backupPath}-${randomUUID()}`;
+  renameSync(path, backupPath);
+  chmodSync(backupPath, 0o600);
+  return { store: result.store, corruptBackupPath: backupPath };
 }
 
 /** Atomically write credentials and enforce owner-only permissions. */

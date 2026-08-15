@@ -8,6 +8,7 @@ import {
   API_BASE_URLS,
   getCredentialsPath,
   OAUTH_BASE_URLS,
+  prepareCredentialsFileWrite,
   readCredentialsFile,
   type DriftEnvironment,
   type StoredCredential,
@@ -26,7 +27,7 @@ interface RegistrationResponse {
 
 interface TokenResponse {
   dd_ingest_token?: unknown;
-  [key: string]: unknown;
+  workspace?: unknown;
 }
 
 interface LoginOptions {
@@ -35,6 +36,7 @@ interface LoginOptions {
   openBrowser?: (url: string) => Promise<boolean>;
   timeoutMs?: number;
   onAuthorizationUrl?: (url: string, browserOpened: boolean) => void;
+  onWarning?: (message: string) => void;
 }
 
 interface LogoutOptions {
@@ -319,22 +321,6 @@ export async function openSystemBrowser(url: string): Promise<boolean> {
   });
 }
 
-function workspaceContext(token: TokenResponse): unknown {
-  if (token.workspace !== undefined) return token.workspace;
-  const context: Record<string, unknown> = {};
-  for (const key of [
-    'workspace_id',
-    'workspaceId',
-    'workspace_slug',
-    'workspaceSlug',
-    'workspace_name',
-    'workspaceName',
-  ]) {
-    if (token[key] !== undefined) context[key] = token[key];
-  }
-  return Object.keys(context).length ? context : undefined;
-}
-
 export function selectAuthEnvironment(
   explicit: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -418,17 +404,22 @@ export async function loginEnvironment(
         throw new Error('OAuth token response is missing dd_ingest_token.');
       }
 
-      const workspace = workspaceContext(token);
       const credential: StoredCredential = {
         apiUrl,
         dd_ingest_token: token.dd_ingest_token,
         client_id: clientId,
         created_at: new Date().toISOString(),
-        ...(workspace === undefined ? {} : { workspace }),
+        ...(token.workspace === undefined ? {} : { workspace: token.workspace }),
       };
-      const currentStore = readCredentialsFile(credentialsPath);
+      const { store: currentStore, corruptBackupPath } =
+        prepareCredentialsFileWrite(credentialsPath);
       currentStore.credentials[oauthBaseUrl] = credential;
       writeCredentialsFile(currentStore, credentialsPath);
+      if (corruptBackupPath) {
+        options.onWarning?.(
+          `The existing credentials file was malformed or incompatible and was preserved at ${corruptBackupPath}; a fresh credentials file was written.`,
+        );
+      }
       await callback.respond(
         200,
         'DriftDebrief login complete',

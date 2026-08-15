@@ -105,6 +105,7 @@ async function main() {
                 `Complete login at:\n${url}\n\nWaiting for authorization…\n`,
             );
           },
+          onWarning: (message) => process.stderr.write(`Warning: ${message}\n`),
         });
         process.stdout.write(
           `Logged in to ${result.environment} (${result.oauthBaseUrl}).\nAPI: ${result.apiUrl}\nSaved ${maskToken(result.credential.dd_ingest_token)} to ${result.credentialsPath}\n`,
