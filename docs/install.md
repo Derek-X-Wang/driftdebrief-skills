@@ -9,13 +9,34 @@ The MCP server (emit + manage tools) is shared by every harness. How EMIT is *tr
 
 ## Prerequisites (all harnesses)
 
-1. A DriftDebrief deployment URL (`https://<deployment>.convex.site`).
-2. A Workspace **ingest token** — mint one in the app under *Workspace → Ingest tokens*.
-3. [Bun](https://bun.sh) installed (the CLI + MCP server run on Bun).
+1. A DriftDebrief account with access to a Workspace.
+2. [Bun](https://bun.sh) installed (the CLI + MCP server run on Bun).
 
-Set these in your environment (shell profile, or the harness's `env` block).
+### Recommended: browser login
 
-**Recommended — profile pairs + one switch** (for anyone who works against both a dev and a prod deployment):
+```sh
+# Production (default)
+bunx @driftdebrief/skills auth login
+
+# Development
+bunx @driftdebrief/skills auth login --env dev
+```
+
+The CLI opens the DriftDebrief authorization page, where you log in, choose a Workspace, and consent. It uses an ephemeral `127.0.0.1` callback plus PKCE S256, then writes the returned long-lived ingest credential to `~/.config/driftdebrief/credentials.json` with `0600` permissions. The access token is retained only so logout can revoke the OAuth grant (which also revokes the linked ingest token).
+
+```sh
+bunx @driftdebrief/skills auth status             # masked prod credential
+bunx @driftdebrief/skills auth status --env dev   # masked dev credential
+bunx @driftdebrief/skills auth logout             # revoke + remove prod
+```
+
+`DRIFTDEBRIEF_ENV=dev|prod` selects the active saved credential. If it is unset, DriftDebrief defaults to **prod**. `bunx @driftdebrief/skills env` reports the effective environment and whether its credential came from `env`, `profile`, or `credentials-file`.
+
+### Existing environment variables
+
+Manual ingest tokens remain fully supported. Resolution order is: bare pair, selected profile pair, credentials file.
+
+**Profile pairs + one switch** (for anyone who works against both a dev and a prod deployment):
 
 ```sh
 export DRIFTDEBRIEF_API_URL_PROD="https://<prod-deployment>.convex.site"
@@ -35,7 +56,7 @@ export DRIFTDEBRIEF_API_URL="https://<deployment>.convex.site"
 export DRIFTDEBRIEF_TOKEN="dd_..."
 ```
 
-Check what resolved at any time with **`bunx @driftdebrief/skills env`** — prints the selected environment (`dev`/`prod`/`custom`, whether it was defaulted), API URL, masked token, agent, and the auto-detected projectKey.
+Check what resolved at any time with **`bunx @driftdebrief/skills env`** — prints the selected environment (`dev`/`prod`/`custom`, whether it was defaulted), credential source, API URL, masked token, agent, and the auto-detected projectKey.
 
 Card `type` on emit is **strict by default** (only the canonical `CARD_TYPES` — a typo guard at the source). To emit a type the server added but this plugin build doesn't yet vendor, opt in with `DRIFTDEBRIEF_ALLOW_UNKNOWN_TYPES=1` (or `emit --allow-unknown-type`), which accepts any bounded slug. The backend ingest boundary is tolerant regardless.
 
@@ -82,7 +103,7 @@ Work normally. After each turn the agent considers emitting a card. When you wan
 
 Codex shares the MCP server but has no Claude Code `Stop` hook, so EMIT is driven by `skills/driftdebrief/SKILL.md` (the agent emits after meaningful work) and SYNC is on demand ("sync my DriftDebrief cards").
 
-Copy the MCP block from [`.codex-plugin/config.toml`](../.codex-plugin/config.toml) into `~/.codex/config.toml` (set the absolute path + env).
+Copy the MCP block from [`.codex-plugin/config.toml`](../.codex-plugin/config.toml) into `~/.codex/config.toml`. A prior `auth login` needs no token env block; set `DRIFTDEBRIEF_AGENT = "codex"` if you want explicit provenance. Existing env-var users can keep their current MCP env block unchanged.
 
 ---
 
@@ -90,7 +111,7 @@ Copy the MCP block from [`.codex-plugin/config.toml`](../.codex-plugin/config.to
 
 Any harness that supports MCP servers + agent instruction files can use DriftDebrief:
 
-1. Register the MCP server: `command = bun`, `args = [<path>/src/mcp.ts]`, with the `DRIFTDEBRIEF_*` env.
+1. Register the MCP server: `command = bun`, `args = [<path>/src/mcp.ts]`. It reads the shared browser-login credentials automatically; an existing `DRIFTDEBRIEF_*` env block continues to take precedence.
 2. Install the portable instructions so the agent knows when/how to emit (see the skills fallback below).
 
 If the harness has a reliable post-response hook, wire it to `bunx @driftdebrief/skills stop-hook` for automated EMIT the same way Claude Code does.

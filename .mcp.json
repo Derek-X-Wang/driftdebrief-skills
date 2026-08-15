@@ -2,11 +2,7 @@
   "mcpServers": {
     "driftdebrief": {
       "command": "bun",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/src/mcp.ts"],
-      "env": {
-        "DRIFTDEBRIEF_API_URL": "${DRIFTDEBRIEF_API_URL}",
-        "DRIFTDEBRIEF_TOKEN": "${DRIFTDEBRIEF_TOKEN}"
-      }
+      "args": ["${CLAUDE_PLUGIN_ROOT}/src/mcp.ts"]
     }
   }
 }
