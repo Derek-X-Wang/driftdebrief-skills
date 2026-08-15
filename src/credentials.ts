@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -29,7 +30,6 @@ export interface StoredCredential {
   apiUrl: string;
   dd_ingest_token: string;
   client_id: string;
-  workspace?: unknown;
   created_at: string;
 }
 
@@ -108,7 +108,6 @@ function readCredentialsFileResult(path: string): CredentialsReadResult {
         dd_ingest_token: entry.dd_ingest_token,
         client_id: entry.client_id,
         created_at: entry.created_at,
-        ...(entry.workspace === undefined ? {} : { workspace: entry.workspace }),
       };
     }
     return { store: { version: 1, credentials }, corrupted };
@@ -131,6 +130,7 @@ export function readCredentialsFile(path = getCredentialsPath()): CredentialsFil
  */
 export function prepareCredentialsFileWrite(
   path = getCredentialsPath(),
+  onCorruptBackup?: (backupPath: string) => void,
 ): { store: CredentialsFile; corruptBackupPath?: string } {
   const result = readCredentialsFileResult(path);
   if (!result.corrupted) return { store: result.store };
@@ -140,8 +140,23 @@ export function prepareCredentialsFileWrite(
   if (existsSync(backupPath)) backupPath = `${backupPath}-${randomUUID()}`;
   renameSync(path, backupPath);
   chmodSync(backupPath, 0o600);
+  onCorruptBackup?.(backupPath);
+
+  const backupPrefix = `${basename(path)}.corrupt-`;
+  const backups = readdirSync(dirname(path))
+    .filter((name) => name.startsWith(backupPrefix))
+    .sort()
+    .reverse();
+  for (const expiredBackup of backups.slice(3)) {
+    unlinkSync(join(dirname(path), expiredBackup));
+  }
+
   return { store: result.store, corruptBackupPath: backupPath };
 }
+
+// Auth mutations intentionally use an unlocked read-modify-write cycle. Two
+// concurrent login/logout processes are therefore last-writer-wins; adding a
+// cross-process lockfile is out of scope for this credentials format.
 
 /** Atomically write credentials and enforce owner-only permissions. */
 export function writeCredentialsFile(store: CredentialsFile, path = getCredentialsPath()): void {

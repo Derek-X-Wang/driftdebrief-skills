@@ -99,6 +99,7 @@ async function main() {
       if (action === 'login') {
         const result = await loginEnvironment(environment, {
           credentialsPath,
+          freshClient: has(authArgs, 'fresh-client'),
           onAuthorizationUrl: (url, browserOpened) => {
             process.stdout.write(
               `${browserOpened ? 'Opened your browser.' : 'Could not open a browser automatically.'}\n` +
@@ -114,11 +115,17 @@ async function main() {
       }
 
       if (action === 'status') {
-        const credential = credentialForEnvironment(environment, credentialsPath);
         const active = resolveEnv(
           { ...process.env, DRIFTDEBRIEF_ENV: environment },
           credentialsPath,
         );
+        let credential;
+        let savedWarning: string | undefined;
+        try {
+          credential = credentialForEnvironment(environment, credentialsPath);
+        } catch (error) {
+          savedWarning = `Could not read saved credentials: ${error instanceof Error ? error.message : String(error)}`;
+        }
         process.stdout.write(
           [
             `saved env:    ${environment}`,
@@ -126,7 +133,8 @@ async function main() {
             `saved API:    ${credential?.apiUrl ?? API_BASE_URLS[environment]}`,
             `saved token:  ${maskToken(credential?.dd_ingest_token)}`,
             `saved path:   ${credentialsPath}`,
-            `saved status: ${credential ? 'present' : 'not present'}`,
+            `saved status: ${savedWarning ? 'unavailable' : credential ? 'present' : 'not present'}`,
+            ...(savedWarning ? [`saved warning: ${savedWarning}`] : []),
             '',
             `active env:   ${active.selected}${active.defaulted ? ' (defaulted)' : ''}`,
             `active source: ${active.source}`,
@@ -140,7 +148,10 @@ async function main() {
       }
 
       if (action === 'logout') {
-        const result = await logoutEnvironment(environment, { credentialsPath });
+        const result = await logoutEnvironment(environment, {
+          credentialsPath,
+          onWarning: (message) => process.stderr.write(`Warning: ${message}\n`),
+        });
         if (result.revokeWarning) process.stderr.write(`Warning: ${result.revokeWarning}\n`);
         process.stdout.write(
           result.removed
@@ -168,7 +179,6 @@ async function main() {
           ...(r.error ? ['', `⚠ ${r.error}`] : []),
         ].join('\n') + '\n',
       );
-      if (r.error) process.exit(1);
       return;
     }
   }
@@ -363,7 +373,7 @@ function printUsage(): void {
       '  driftdebrief mcp                       Run the MCP server (Claude Code / Codex / Cursor)',
       '  driftdebrief stop-hook                 Stop-hook EMIT driver (wire into .claude/settings.json)',
       '  driftdebrief install                   Print Claude Code setup (MCP + Stop hook)',
-      '  driftdebrief auth login [--env dev|prod]   Sign in via browser + PKCE (defaults to prod)',
+      '  driftdebrief auth login [--env dev|prod] [--fresh-client]  Sign in via browser + PKCE',
       '  driftdebrief auth status [--env dev|prod]  Show the saved login (token masked)',
       '  driftdebrief auth logout [--env dev|prod]  Attempt remote revoke, then remove the saved login',
       '  driftdebrief env                       Print the resolved environment, source, URL, and masked token',

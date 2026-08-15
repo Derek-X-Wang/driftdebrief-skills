@@ -118,7 +118,6 @@ describe('OAuth credentials', () => {
         return Response.json({
           access_token: 'short-lived-and-ignored',
           dd_ingest_token: 'dd_from_grant',
-          workspace: { id: 'workspace-1', name: 'Example' },
         });
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -150,7 +149,6 @@ describe('OAuth credentials', () => {
       apiUrl: API_BASE_URLS.prod,
       dd_ingest_token: 'dd_from_grant',
       client_id: 'public-client',
-      workspace: { id: 'workspace-1', name: 'Example' },
     });
     expect(result.credential).not.toHaveProperty('access_token');
     expect(readCredentialsFile(credentialsPath).credentials[OAUTH_BASE_URLS.prod]).toEqual(
@@ -241,6 +239,9 @@ describe('OAuth credentials', () => {
     const corruptedContents =
       '{"version":1,"credentials":{"https://dev.driftdebrief.derekxwang.com":{"dd_ingest_token":"dd_dev_recoverable"}}';
     writeFileSync(credentialsPath, corruptedContents);
+    for (const timestamp of ['2026-08-12', '2026-08-13', '2026-08-14']) {
+      writeFileSync(`${credentialsPath}.corrupt-${timestamp}`, `backup-${timestamp}`);
+    }
     const warnings: string[] = [];
     let callbackResponse: Promise<Response> | undefined;
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
@@ -262,7 +263,10 @@ describe('OAuth credentials', () => {
     await loginEnvironment('prod', {
       credentialsPath,
       fetchImpl,
-      onWarning: (message) => warnings.push(message),
+      onWarning: (message) => {
+        expect(existsSync(credentialsPath)).toBe(false);
+        warnings.push(message);
+      },
       openBrowser: async (url) => {
         const authorizationUrl = new URL(url);
         const callbackUrl = new URL(authorizationUrl.searchParams.get('redirect_uri')!);
@@ -274,8 +278,10 @@ describe('OAuth credentials', () => {
     });
 
     expect((await callbackResponse!).status).toBe(200);
-    const backupName = readdirSync(directory).find((name) =>
-      name.startsWith('credentials.json.corrupt-'),
+    const backupName = readdirSync(directory).find(
+      (name) =>
+        name.startsWith('credentials.json.corrupt-') &&
+        readFileSync(join(directory, name), 'utf8') === corruptedContents,
     );
     expect(backupName).toBeTruthy();
     const backupPath = join(directory, backupName!);
@@ -283,6 +289,11 @@ describe('OAuth credentials', () => {
     expect(warnings).toEqual([
       expect.stringContaining(`preserved at ${backupPath}`),
     ]);
+    const backups = readdirSync(directory).filter((name) =>
+      name.startsWith('credentials.json.corrupt-'),
+    );
+    expect(backups).toHaveLength(3);
+    expect(backups).not.toContain('credentials.json.corrupt-2026-08-12');
     expect(readCredentialsFile(credentialsPath).credentials[OAUTH_BASE_URLS.prod]).toMatchObject({
       dd_ingest_token: 'dd_new_prod',
     });
@@ -311,6 +322,79 @@ describe('OAuth credentials', () => {
       }),
     ).rejects.toThrow('Timed out waiting');
     expect(existsSync(credentialsPath)).toBe(false);
+  });
+
+  it('explains --fresh-client after a reused client times out at authorization', async () => {
+    writeCredentialsFile(
+      {
+        version: 1,
+        credentials: {
+          [OAUTH_BASE_URLS.prod]: stored('old', 'prod', 'deleted-client'),
+        },
+      },
+      credentialsPath,
+    );
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return Response.json({
+          authorization_endpoint: 'https://auth.example/authorize',
+          token_endpoint: 'https://auth.example/token',
+          registration_endpoint: 'https://auth.example/register',
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      loginEnvironment('prod', {
+        credentialsPath,
+        fetchImpl,
+        openBrowser: async () => true,
+        timeoutMs: 10,
+      }),
+    ).rejects.toThrow(
+      'If the browser showed an OAuth error page, run driftdebrief auth login --fresh-client.',
+    );
+  });
+
+  it('forces DCR instead of reusing a saved client with freshClient', async () => {
+    writeCredentialsFile(
+      {
+        version: 1,
+        credentials: {
+          [OAUTH_BASE_URLS.prod]: stored('old', 'prod', 'deleted-client'),
+        },
+      },
+      credentialsPath,
+    );
+    let registerCalls = 0;
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return Response.json({
+          authorization_endpoint: 'https://auth.example/authorize',
+          token_endpoint: 'https://auth.example/token',
+          registration_endpoint: 'https://auth.example/register',
+        });
+      }
+      if (url === 'https://auth.example/register') {
+        registerCalls += 1;
+        return Response.json({ client_id: 'fresh-client' });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      loginEnvironment('prod', {
+        credentialsPath,
+        fetchImpl,
+        freshClient: true,
+        openBrowser: async () => true,
+        timeoutMs: 10,
+      }),
+    ).rejects.toThrow('Timed out waiting');
+    expect(registerCalls).toBe(1);
   });
 
   it('reuses a persisted client_id without another DCR registration', async () => {
@@ -487,6 +571,41 @@ describe('OAuth credentials', () => {
     expect(result.removed).toBe(true);
     expect(result.revokeWarning).toContain('Remote revoke failed');
     expect(existsSync(credentialsPath)).toBe(false);
+  });
+
+  it('backs up mixed corrupt credentials before logging out the valid environment', async () => {
+    const mixedContents = JSON.stringify({
+      version: 1,
+      credentials: {
+        [OAUTH_BASE_URLS.dev]: {
+          dd_ingest_token: 'dd_dev_recoverable',
+          malformed: true,
+        },
+        [OAUTH_BASE_URLS.prod]: stored('prod'),
+      },
+    });
+    writeFileSync(credentialsPath, mixedContents);
+    const warnings: string[] = [];
+    const mock = await startRevokeServer(200);
+    try {
+      const result = await logoutEnvironment('prod', {
+        credentialsPath,
+        apiBaseUrl: mock.baseUrl,
+        onWarning: (message) => warnings.push(message),
+      });
+      expect(result.removed).toBe(true);
+      expect(await mock.request).toMatchObject({ authorization: 'Bearer dd_prod' });
+      expect(existsSync(credentialsPath)).toBe(false);
+      const backupName = readdirSync(directory).find((name) =>
+        name.startsWith('credentials.json.corrupt-'),
+      );
+      expect(backupName).toBeTruthy();
+      const backupPath = join(directory, backupName!);
+      expect(readFileSync(backupPath, 'utf8')).toBe(mixedContents);
+      expect(warnings).toEqual([expect.stringContaining(`preserved at ${backupPath}`)]);
+    } finally {
+      await mock.close();
+    }
   });
 
   it('rejects a valueless --env flag', () => {

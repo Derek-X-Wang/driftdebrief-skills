@@ -27,7 +27,6 @@ interface RegistrationResponse {
 
 interface TokenResponse {
   dd_ingest_token?: unknown;
-  workspace?: unknown;
 }
 
 interface LoginOptions {
@@ -35,6 +34,7 @@ interface LoginOptions {
   fetchImpl?: typeof fetch;
   openBrowser?: (url: string) => Promise<boolean>;
   timeoutMs?: number;
+  freshClient?: boolean;
   onAuthorizationUrl?: (url: string, browserOpened: boolean) => void;
   onWarning?: (message: string) => void;
 }
@@ -42,6 +42,7 @@ interface LoginOptions {
 interface LogoutOptions {
   credentialsPath?: string;
   fetchImpl?: typeof fetch;
+  onWarning?: (message: string) => void;
   /** Test seam for a local HTTP server; production always uses API_BASE_URLS. */
   apiBaseUrl?: string;
 }
@@ -355,7 +356,9 @@ export async function loginEnvironment(
   const fetchImpl = options.fetchImpl ?? fetch;
   const openBrowser = options.openBrowser ?? openSystemBrowser;
   const existingStore = readCredentialsFile(credentialsPath);
-  let clientId = existingStore.credentials[oauthBaseUrl]?.client_id;
+  let clientId = options.freshClient
+    ? undefined
+    : existingStore.credentials[oauthBaseUrl]?.client_id;
   const metadata = await fetchMetadata(oauthBaseUrl, fetchImpl);
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -364,6 +367,7 @@ export async function loginEnvironment(
     const codeChallenge = base64Url(createHash('sha256').update(codeVerifier).digest());
     const listener = await createCallbackListener(state, options.timeoutMs ?? 5 * 60_000);
     let callback: AuthorizationCallback | undefined;
+    const reusedClient = clientId !== undefined;
 
     try {
       clientId ??= await registerClient(
@@ -409,17 +413,16 @@ export async function loginEnvironment(
         dd_ingest_token: token.dd_ingest_token,
         client_id: clientId,
         created_at: new Date().toISOString(),
-        ...(token.workspace === undefined ? {} : { workspace: token.workspace }),
       };
-      const { store: currentStore, corruptBackupPath } =
-        prepareCredentialsFileWrite(credentialsPath);
+      const { store: currentStore } = prepareCredentialsFileWrite(
+        credentialsPath,
+        (backupPath) =>
+          options.onWarning?.(
+            `The existing credentials file was malformed or incompatible and was preserved at ${backupPath}.`,
+          ),
+      );
       currentStore.credentials[oauthBaseUrl] = credential;
       writeCredentialsFile(currentStore, credentialsPath);
-      if (corruptBackupPath) {
-        options.onWarning?.(
-          `The existing credentials file was malformed or incompatible and was preserved at ${corruptBackupPath}; a fresh credentials file was written.`,
-        );
-      }
       await callback.respond(
         200,
         'DriftDebrief login complete',
@@ -440,8 +443,21 @@ export async function loginEnvironment(
         clientId = undefined;
         continue;
       }
+      if (
+        reusedClient &&
+        error instanceof Error &&
+        error.message === 'Timed out waiting for the browser login callback.'
+      ) {
+        throw new Error(
+          `${error.message} If the browser showed an OAuth error page, run driftdebrief auth login --fresh-client.`,
+        );
+      }
       if (callback) {
-        await callback.respond(500, 'DriftDebrief login failed', String(error));
+        await callback.respond(
+          500,
+          'DriftDebrief login failed',
+          truncate(String(error)) ?? 'OAuth login failed.',
+        );
       }
       throw error;
     } finally {
@@ -460,8 +476,8 @@ export async function logoutEnvironment(
   const apiUrl = options.apiBaseUrl ?? API_BASE_URLS[environment];
   const credentialsPath = options.credentialsPath ?? getCredentialsPath();
   const fetchImpl = options.fetchImpl ?? fetch;
-  const store = readCredentialsFile(credentialsPath);
-  const credential = store.credentials[oauthBaseUrl];
+  const initialStore = readCredentialsFile(credentialsPath);
+  const credential = initialStore.credentials[oauthBaseUrl];
   if (!credential) {
     return { environment, oauthBaseUrl, apiUrl, credentialsPath, removed: false };
   }
@@ -495,14 +511,21 @@ export async function logoutEnvironment(
     revokeWarning = `Remote revoke failed: ${String(error)} — token may still be live; revoke in the web UI.`;
   }
 
+  const { store, corruptBackupPath } = prepareCredentialsFileWrite(
+    credentialsPath,
+    (backupPath) =>
+      options.onWarning?.(
+        `The existing credentials file was malformed or incompatible and was preserved at ${backupPath}.`,
+      ),
+  );
   delete store.credentials[oauthBaseUrl];
-  if (Object.keys(store.credentials).length === 0) {
+  if (Object.keys(store.credentials).length === 0 && !corruptBackupPath) {
     try {
       unlinkSync(credentialsPath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-  } else {
+  } else if (Object.keys(store.credentials).length > 0) {
     writeCredentialsFile(store, credentialsPath);
   }
 

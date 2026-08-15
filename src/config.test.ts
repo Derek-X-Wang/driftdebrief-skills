@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -183,5 +184,53 @@ describe('resolveEnv', () => {
     writeFileSync(credentialsPath, '{ definitely not json');
     expect(() => resolve({})).not.toThrow();
     expect(resolve({}).error).toContain('auth login');
+  });
+
+  it('returns a resolution error instead of throwing on a credentials read failure', () => {
+    mkdirSync(credentialsPath);
+    const result = resolve({});
+    expect(result.error).toContain(`Could not read DriftDebrief credentials at ${credentialsPath}`);
+  });
+
+  it('keeps the env diagnostic successful and prints an unreadable credentials error', () => {
+    const configDirectory = join(directory, 'driftdebrief');
+    const cliCredentialsPath = join(configDirectory, 'credentials.json');
+    mkdirSync(configDirectory);
+    writeFileSync(cliCredentialsPath, '{"version":1,"credentials":{}}');
+    chmodSync(cliCredentialsPath, 0o000);
+
+    const cliEnv: NodeJS.ProcessEnv = { ...process.env, XDG_CONFIG_HOME: directory };
+    for (const key of [
+      'DRIFTDEBRIEF_API_URL',
+      'DRIFTDEBRIEF_TOKEN',
+      'DRIFTDEBRIEF_API_URL_DEV',
+      'DRIFTDEBRIEF_TOKEN_DEV',
+      'DRIFTDEBRIEF_API_URL_PROD',
+      'DRIFTDEBRIEF_TOKEN_PROD',
+      'DRIFTDEBRIEF_ENV',
+    ]) {
+      delete cliEnv[key];
+    }
+    const result = spawnSync('bun', [join(process.cwd(), 'src/cli.ts'), 'env'], {
+      encoding: 'utf8',
+      env: cliEnv,
+    });
+    const statusResult = spawnSync(
+      'bun',
+      [join(process.cwd(), 'src/cli.ts'), 'auth', 'status'],
+      { encoding: 'utf8', env: cliEnv },
+    );
+    chmodSync(cliCredentialsPath, 0o600);
+
+    expect(result.status).toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain(
+      `Could not read DriftDebrief credentials at ${cliCredentialsPath}`,
+    );
+    expect(statusResult.status).toBe(1);
+    expect(statusResult.stdout).toContain('saved status: unavailable');
+    expect(statusResult.stdout).toContain(
+      `Could not read DriftDebrief credentials at ${cliCredentialsPath}`,
+    );
+    expect(statusResult.stderr).toBe('');
   });
 });

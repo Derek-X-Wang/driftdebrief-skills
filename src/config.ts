@@ -53,9 +53,9 @@ export interface EnvResolution {
  *    routing there is the worse failure. Pin dev explicitly per repo (e.g.
  *    `.claude/settings.json` → `"env": { "DRIFTDEBRIEF_ENV": "dev" }`).
  *
- * Invalid/missing configuration is returned as `resolution.error`. Filesystem
- * errors other than a missing credentials file are rethrown so permission and
- * I/O problems are never misreported as "not logged in".
+ * Invalid/missing configuration and credential-file read failures are returned
+ * as `resolution.error` so diagnostics remain available when configuration is
+ * broken. Login reads the file directly and still fails hard on those errors.
  */
 export function resolveEnv(
   env: NodeJS.ProcessEnv = process.env,
@@ -120,7 +120,18 @@ export function resolveEnv(
   }
 
   const oauthBaseUrl = OAUTH_BASE_URLS[selected];
-  const credential = readCredentialsFile(credentialsPath).credentials[oauthBaseUrl];
+  let credential;
+  try {
+    credential = readCredentialsFile(credentialsPath).credentials[oauthBaseUrl];
+  } catch (error) {
+    return {
+      selected,
+      defaulted,
+      source: 'credentials-file',
+      credentialsPath,
+      error: `Could not read DriftDebrief credentials at ${credentialsPath}: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
   if (credential) {
     return {
       selected,
