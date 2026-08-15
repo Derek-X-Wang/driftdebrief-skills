@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { isCardType, isValidCardTypeSlug } from '@driftdebrief/core';
 
+import { authEnvironmentFromArgs, loginEnvironment, logoutEnvironment } from './auth';
 import {
   archiveNewCard,
   emitCard,
@@ -11,6 +12,13 @@ import {
   updateNewCard,
 } from './client';
 import { allowUnknownTypes, loadConfig, resolveEnv, resolveProjectKey } from './config';
+import {
+  API_BASE_URLS,
+  credentialForEnvironment,
+  getCredentialsPath,
+  maskToken,
+  OAUTH_BASE_URLS,
+} from './credentials';
 import { runMcpServer } from './mcp';
 import { runStopHook } from './reflect';
 
@@ -45,9 +53,12 @@ function installHelp(cliPath: string): string {
 
   return `DriftDebrief — Claude Code setup
 
-1) Set env (e.g. in your shell profile or .claude/settings.json "env"):
-   export DRIFTDEBRIEF_API_URL="https://<your-deployment>.convex.site"
-   export DRIFTDEBRIEF_TOKEN="dd_..."   # mint one in the app: Workspace > Ingest tokens
+1) Sign in through your browser (recommended; defaults to prod):
+   ${cmd} auth login
+   # For dev: ${cmd} auth login --env dev
+
+   Existing DRIFTDEBRIEF_API_URL + DRIFTDEBRIEF_TOKEN env configuration is
+   still supported and takes precedence over the saved login.
 
 2) Register the MCP server (emit + retrieve + manage; works in Codex/Cursor too):
    claude mcp add driftdebrief -- ${cmd} mcp
@@ -80,23 +91,94 @@ async function main() {
     case 'hooks':
       process.stdout.write(installHelp(process.argv[1]!));
       return;
+    case 'auth': {
+      const [action, ...authArgs] = rest;
+      const environment = authEnvironmentFromArgs(authArgs);
+      const credentialsPath = getCredentialsPath();
+
+      if (action === 'login') {
+        const result = await loginEnvironment(environment, {
+          credentialsPath,
+          freshClient: has(authArgs, 'fresh-client'),
+          onAuthorizationUrl: (url, browserOpened) => {
+            process.stdout.write(
+              `${browserOpened ? 'Opened your browser.' : 'Could not open a browser automatically.'}\n` +
+                `Complete login at:\n${url}\n\nWaiting for authorization…\n`,
+            );
+          },
+          onWarning: (message) => process.stderr.write(`Warning: ${message}\n`),
+        });
+        process.stdout.write(
+          `Logged in to ${result.environment} (${result.oauthBaseUrl}).\nAPI: ${result.apiUrl}\nSaved ${maskToken(result.credential.dd_ingest_token)} to ${result.credentialsPath}\n`,
+        );
+        return;
+      }
+
+      if (action === 'status') {
+        const active = resolveEnv(
+          { ...process.env, DRIFTDEBRIEF_ENV: environment },
+          credentialsPath,
+        );
+        let credential;
+        let savedWarning: string | undefined;
+        try {
+          credential = credentialForEnvironment(environment, credentialsPath);
+        } catch (error) {
+          savedWarning = `Could not read saved credentials: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        process.stdout.write(
+          [
+            `saved env:    ${environment}`,
+            `OAuth URL:    ${OAUTH_BASE_URLS[environment]}`,
+            `saved API:    ${credential?.apiUrl ?? API_BASE_URLS[environment]}`,
+            `saved token:  ${maskToken(credential?.dd_ingest_token)}`,
+            `saved path:   ${credentialsPath}`,
+            `saved status: ${savedWarning ? 'unavailable' : credential ? 'present' : 'not present'}`,
+            ...(savedWarning ? [`saved warning: ${savedWarning}`] : []),
+            '',
+            `active env:   ${active.selected}${active.defaulted ? ' (defaulted)' : ''}`,
+            `active source: ${active.source}`,
+            `active API:   ${active.apiUrl ?? '(not set)'}`,
+            `active token: ${maskToken(active.token)}`,
+            ...(active.error ? [`active error: ${active.error}`] : []),
+          ].join('\n') + '\n',
+        );
+        if (active.error || !active.token || !active.apiUrl) process.exitCode = 1;
+        return;
+      }
+
+      if (action === 'logout') {
+        const result = await logoutEnvironment(environment, {
+          credentialsPath,
+          onWarning: (message) => process.stderr.write(`Warning: ${message}\n`),
+        });
+        if (result.revokeWarning) process.stderr.write(`Warning: ${result.revokeWarning}\n`);
+        process.stdout.write(
+          result.removed
+            ? `Logged out of ${environment}; removed its credential from ${credentialsPath}.\n`
+            : `No saved ${environment} credential in ${credentialsPath}.\n`,
+        );
+        return;
+      }
+
+      throw new Error('auth requires login, status, or logout (optional: --env dev|prod)');
+    }
     case 'env': {
       // Diagnostic: print what the config WOULD resolve to, without throwing —
       // this must work (and be useful) precisely when config is broken.
       const r = resolveEnv();
-      const mask = (t?: string) =>
-        t ? `${t.slice(0, 3)}…${t.slice(-4)} (${t.length} chars)` : '(not set)';
       process.stdout.write(
         [
           `selected:   ${r.selected}${r.defaulted ? ' (defaulted — set DRIFTDEBRIEF_ENV=dev|prod to pin)' : ''}`,
+          `source:     ${r.source}`,
           `apiUrl:     ${r.apiUrl ?? '(not set)'}`,
-          `token:      ${mask(r.token)}`,
+          `token:      ${maskToken(r.token)}`,
+          ...(r.credentialsPath ? [`credentials: ${r.credentialsPath}`] : []),
           `agent:      ${process.env.DRIFTDEBRIEF_AGENT ?? 'claude-code (default)'}`,
           `projectKey: ${resolveProjectKey(process.cwd())}${process.env.DRIFTDEBRIEF_PROJECT_KEY ? ' (from DRIFTDEBRIEF_PROJECT_KEY override)' : ''}`,
           ...(r.error ? ['', `⚠ ${r.error}`] : []),
         ].join('\n') + '\n',
       );
-      if (r.error) process.exit(1);
       return;
     }
   }
@@ -291,7 +373,10 @@ function printUsage(): void {
       '  driftdebrief mcp                       Run the MCP server (Claude Code / Codex / Cursor)',
       '  driftdebrief stop-hook                 Stop-hook EMIT driver (wire into .claude/settings.json)',
       '  driftdebrief install                   Print Claude Code setup (MCP + Stop hook)',
-      '  driftdebrief env                       Print the resolved environment (dev/prod/custom, URL, token masked)',
+      '  driftdebrief auth login [--env dev|prod] [--fresh-client]  Sign in via browser + PKCE',
+      '  driftdebrief auth status [--env dev|prod]  Show the saved login (token masked)',
+      '  driftdebrief auth logout [--env dev|prod]  Attempt remote revoke, then remove the saved login',
+      '  driftdebrief env                       Print the resolved environment, source, URL, and masked token',
       '  driftdebrief open [--context|--json]   Print unresolved cards for this repo',
       '  driftdebrief emit --type T --title X --body Y [--stdin] [--files a,b] [--importance I] [--allow-unknown-type]',
       '  driftdebrief mark-stale --card <id>[,<id>,...] [--from <sha>] [--to <sha>] [--files a,b]',
@@ -300,7 +385,7 @@ function printUsage(): void {
       '  driftdebrief propose-change --id <id> --proposal <text> [--evidence <text>|--stdin]',
       '',
       '(Running from a clone? Substitute `bun src/cli.ts` for `driftdebrief`.)',
-      'Env: DRIFTDEBRIEF_API_URL (Convex .site URL), DRIFTDEBRIEF_TOKEN (Workspace ingest token)',
+      'Recommended: driftdebrief auth login. Env vars remain supported and take precedence.',
     ].join('\n') + '\n',
   );
 }

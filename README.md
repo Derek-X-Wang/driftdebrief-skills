@@ -20,14 +20,21 @@ There is deliberately **no `SessionStart` auto-inject**: its `additionalContext`
 claude plugin marketplace add Derek-X-Wang/driftdebrief-skills
 claude plugin install driftdebrief
 
-# 2. EMIT hook -> .claude/settings.json (NOT the plugin — plugin hooks are broken upstream)
+# 2. Sign in through the browser (prod by default; add --env dev for dev)
+bunx @driftdebrief/skills auth login
+
+# 3. EMIT hook -> .claude/settings.json (NOT the plugin — plugin hooks are broken upstream)
 #    Merge the Stop block from hooks/stop-hook.settings.json, or run:
 bunx @driftdebrief/skills install   # prints the exact snippet + commands
 ```
 
 The CLI + MCP server are on npm as [`@driftdebrief/skills`](https://www.npmjs.com/package/@driftdebrief/skills) — `bunx @driftdebrief/skills <cmd>` works anywhere Bun is installed (from a clone, substitute `bun src/cli.ts`).
 
-Then set your environment — either the bare `DRIFTDEBRIEF_API_URL` + `DRIFTDEBRIEF_TOKEN` pair, or (if you switch between dev and prod deployments) the `_DEV`/`_PROD` profile pairs with `DRIFTDEBRIEF_ENV=dev|prod` selecting between them (unset defaults to **prod**; pin dev per-repo via `.claude/settings.json` env). Mint tokens in the app: *Workspace → Ingest tokens*. Verify with `bunx @driftdebrief/skills env`. Work normally, run **`/dd-sync`** to reconcile.
+`auth login` uses browser OAuth with PKCE, lets you choose a Workspace and consent, then saves the resulting ingest credential in `${XDG_CONFIG_HOME:-~/.config}/driftdebrief/credentials.json` with `0600` permissions. If that file is malformed, the CLI preserves it beside the active file as `credentials.json.corrupt-<timestamp>`, warns with the exact path, and keeps only the three most recent backups because they may contain live tokens. Use `auth status` to inspect the saved credential and the effective winning config tier.
+
+`auth logout` self-revocation requires a server with `/api/tokens/revoke` support; on older servers the CLI warns, removes the local entry, and tells you to revoke in the web UI. Re-login reuses the saved public OAuth client when possible, but it mints a new `dd_` token; if the browser shows an OAuth client error and the CLI times out, rerun `auth login --fresh-client` to force a new public-client registration. The prior token remains live until logout successfully reaches a self-revocation-capable server or you revoke it in the web UI.
+
+Existing environment configuration remains supported with unchanged precedence: the bare `DRIFTDEBRIEF_API_URL` + `DRIFTDEBRIEF_TOKEN` pair wins first, then the selected `_DEV`/`_PROD` profile pair, then the credentials file. Verify the effective environment and source with `bunx @driftdebrief/skills env`. Work normally, then run **`/dd-sync`** to reconcile.
 
 Full per-harness instructions (Codex, Cursor, Gemini, the portable `npx skills` fallback): **[`docs/install.md`](docs/install.md)**.
 
@@ -57,7 +64,7 @@ The backend owns the canonical card vocabulary and publishes it (plus the zod wi
 ```sh
 bun install
 bun run check-types     # tsc --noEmit
-bun src/mcp.ts          # run the MCP server (needs DRIFTDEBRIEF_* env)
+bun src/mcp.ts          # run the MCP server (uses auth login or DRIFTDEBRIEF_* env)
 ```
 
 ## License
