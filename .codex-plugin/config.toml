@@ -14,4 +14,7 @@ command = "bunx"
 args = ["@driftdebrief/skills", "mcp"]
 
 [mcp_servers.driftdebrief.env]
+# Existing env-token setup remains supported; uncomment both lines together.
+# DRIFTDEBRIEF_API_URL = "https://<your-deployment>.convex.site"
+# DRIFTDEBRIEF_TOKEN = "dd_..."
 DRIFTDEBRIEF_AGENT = "codex"

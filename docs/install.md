@@ -22,13 +22,17 @@ bunx @driftdebrief/skills auth login
 bunx @driftdebrief/skills auth login --env dev
 ```
 
-The CLI opens the DriftDebrief authorization page, where you log in, choose a Workspace, and consent. It uses an ephemeral `127.0.0.1` callback plus PKCE S256, then writes the returned long-lived ingest credential to `~/.config/driftdebrief/credentials.json` with `0600` permissions. The access token is retained only so logout can revoke the OAuth grant (which also revokes the linked ingest token).
+The CLI opens the DriftDebrief authorization page, where you log in, choose a Workspace, and consent. It uses an ephemeral `127.0.0.1` callback plus PKCE S256, then writes the returned long-lived ingest credential to `${XDG_CONFIG_HOME:-~/.config}/driftdebrief/credentials.json` with `0600` permissions. Browser OAuth runs on `driftdebrief.derekxwang.com`; card ingestion and retrieval use the environment's separate Convex site origin automatically.
 
 ```sh
 bunx @driftdebrief/skills auth status             # masked prod credential
 bunx @driftdebrief/skills auth status --env dev   # masked dev credential
 bunx @driftdebrief/skills auth logout             # revoke + remove prod
 ```
+
+Logout authenticates `POST /api/tokens/revoke` with the saved `dd_` token. When the server supports that endpoint, it deletes the consent and cascades revocation to sibling tokens; on an older server, a 401/404, or a network failure, the CLI warns and still deletes the local entry, so revoke the token in the web UI if it may still be live.
+
+Re-login reuses the saved public OAuth client when it is still valid, but every successful login mints a new `dd_` token. The previous token dies only after `auth logout` successfully reaches the revocation endpoint or you revoke it in the web UI.
 
 `DRIFTDEBRIEF_ENV=dev|prod` selects the active saved credential. If it is unset, DriftDebrief defaults to **prod**. `bunx @driftdebrief/skills env` reports the effective environment and whether its credential came from `env`, `profile`, or `credentials-file`.
 

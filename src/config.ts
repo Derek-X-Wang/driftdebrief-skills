@@ -1,8 +1,9 @@
 import { execSync } from 'node:child_process';
 
 import {
-  ENVIRONMENT_BASE_URLS,
+  API_BASE_URLS,
   getCredentialsPath,
+  OAUTH_BASE_URLS,
   readCredentialsFile,
 } from './credentials';
 
@@ -52,8 +53,9 @@ export interface EnvResolution {
  *    routing there is the worse failure. Pin dev explicitly per repo (e.g.
  *    `.claude/settings.json` → `"env": { "DRIFTDEBRIEF_ENV": "dev" }`).
  *
- * Never throws — callers that need hard config (loadConfig) throw on
- * `resolution.error`; the `driftdebrief env` diagnostic prints it instead.
+ * Invalid/missing configuration is returned as `resolution.error`. Filesystem
+ * errors other than a missing credentials file are rethrown so permission and
+ * I/O problems are never misreported as "not logged in".
  */
 export function resolveEnv(
   env: NodeJS.ProcessEnv = process.env,
@@ -117,14 +119,14 @@ export function resolveEnv(
     };
   }
 
-  const baseUrl = ENVIRONMENT_BASE_URLS[selected];
-  const credential = readCredentialsFile(credentialsPath).credentials[baseUrl];
+  const oauthBaseUrl = OAUTH_BASE_URLS[selected];
+  const credential = readCredentialsFile(credentialsPath).credentials[oauthBaseUrl];
   if (credential) {
     return {
       selected,
       defaulted,
       source: 'credentials-file',
-      apiUrl: baseUrl,
+      apiUrl: API_BASE_URLS[selected],
       token: credential.dd_ingest_token,
       credentialsPath,
     };

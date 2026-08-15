@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { isCardType, isValidCardTypeSlug } from '@driftdebrief/core';
 
-import { loginEnvironment, logoutEnvironment, selectAuthEnvironment } from './auth';
+import { authEnvironmentFromArgs, loginEnvironment, logoutEnvironment } from './auth';
 import {
   archiveNewCard,
   emitCard,
@@ -13,10 +13,11 @@ import {
 } from './client';
 import { allowUnknownTypes, loadConfig, resolveEnv, resolveProjectKey } from './config';
 import {
+  API_BASE_URLS,
   credentialForEnvironment,
-  ENVIRONMENT_BASE_URLS,
   getCredentialsPath,
   maskToken,
+  OAUTH_BASE_URLS,
 } from './credentials';
 import { runMcpServer } from './mcp';
 import { runStopHook } from './reflect';
@@ -92,7 +93,7 @@ async function main() {
       return;
     case 'auth': {
       const [action, ...authArgs] = rest;
-      const environment = selectAuthEnvironment(flag(authArgs, 'env'));
+      const environment = authEnvironmentFromArgs(authArgs);
       const credentialsPath = getCredentialsPath();
 
       if (action === 'login') {
@@ -106,24 +107,34 @@ async function main() {
           },
         });
         process.stdout.write(
-          `Logged in to ${result.environment} (${result.baseUrl}).\nSaved ${maskToken(result.credential.dd_ingest_token)} to ${result.credentialsPath}\n`,
+          `Logged in to ${result.environment} (${result.oauthBaseUrl}).\nAPI: ${result.apiUrl}\nSaved ${maskToken(result.credential.dd_ingest_token)} to ${result.credentialsPath}\n`,
         );
         return;
       }
 
       if (action === 'status') {
         const credential = credentialForEnvironment(environment, credentialsPath);
+        const active = resolveEnv(
+          { ...process.env, DRIFTDEBRIEF_ENV: environment },
+          credentialsPath,
+        );
         process.stdout.write(
           [
-            `environment: ${environment}`,
-            `baseUrl:     ${ENVIRONMENT_BASE_URLS[environment]}`,
-            `token:       ${maskToken(credential?.dd_ingest_token)}`,
-            'source:      credentials-file',
-            `path:        ${credentialsPath}`,
-            `status:      ${credential ? 'logged in' : 'not logged in'}`,
+            `saved env:    ${environment}`,
+            `OAuth URL:    ${OAUTH_BASE_URLS[environment]}`,
+            `saved API:    ${credential?.apiUrl ?? API_BASE_URLS[environment]}`,
+            `saved token:  ${maskToken(credential?.dd_ingest_token)}`,
+            `saved path:   ${credentialsPath}`,
+            `saved status: ${credential ? 'present' : 'not present'}`,
+            '',
+            `active env:   ${active.selected}${active.defaulted ? ' (defaulted)' : ''}`,
+            `active source: ${active.source}`,
+            `active API:   ${active.apiUrl ?? '(not set)'}`,
+            `active token: ${maskToken(active.token)}`,
+            ...(active.error ? [`active error: ${active.error}`] : []),
           ].join('\n') + '\n',
         );
-        if (!credential) process.exitCode = 1;
+        if (active.error || !active.token || !active.apiUrl) process.exitCode = 1;
         return;
       }
 
@@ -353,7 +364,7 @@ function printUsage(): void {
       '  driftdebrief install                   Print Claude Code setup (MCP + Stop hook)',
       '  driftdebrief auth login [--env dev|prod]   Sign in via browser + PKCE (defaults to prod)',
       '  driftdebrief auth status [--env dev|prod]  Show the saved login (token masked)',
-      '  driftdebrief auth logout [--env dev|prod]  Revoke and remove the saved login',
+      '  driftdebrief auth logout [--env dev|prod]  Attempt remote revoke, then remove the saved login',
       '  driftdebrief env                       Print the resolved environment, source, URL, and masked token',
       '  driftdebrief open [--context|--json]   Print unresolved cards for this repo',
       '  driftdebrief emit --type T --title X --body Y [--stdin] [--files a,b] [--importance I] [--allow-unknown-type]',

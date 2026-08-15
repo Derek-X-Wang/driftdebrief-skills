@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { resolveEnv } from './config';
-import { ENVIRONMENT_BASE_URLS, writeCredentialsFile } from './credentials';
+import { API_BASE_URLS, OAUTH_BASE_URLS, writeCredentialsFile } from './credentials';
 
 const PAIRS = {
   DRIFTDEBRIEF_API_URL_DEV: 'https://dev.convex.site',
@@ -89,9 +89,9 @@ describe('resolveEnv', () => {
       {
         version: 1,
         credentials: {
-          [ENVIRONMENT_BASE_URLS.prod]: {
+          [OAUTH_BASE_URLS.prod]: {
+            apiUrl: API_BASE_URLS.prod,
             dd_ingest_token: 'dd_file_prod',
-            access_token: 'access_prod',
             client_id: 'client_prod',
             created_at: '2026-08-15T00:00:00.000Z',
           },
@@ -104,7 +104,7 @@ describe('resolveEnv', () => {
       selected: 'prod',
       defaulted: true,
       source: 'credentials-file',
-      apiUrl: ENVIRONMENT_BASE_URLS.prod,
+      apiUrl: API_BASE_URLS.prod,
       token: 'dd_file_prod',
       credentialsPath,
     });
@@ -116,9 +116,9 @@ describe('resolveEnv', () => {
       {
         version: 1,
         credentials: {
-          [ENVIRONMENT_BASE_URLS.dev]: {
+          [OAUTH_BASE_URLS.dev]: {
+            apiUrl: API_BASE_URLS.dev,
             dd_ingest_token: 'dd_file_dev',
-            access_token: 'access_dev',
             client_id: 'client_dev',
             created_at: '2026-08-15T00:00:00.000Z',
           },
@@ -130,6 +130,7 @@ describe('resolveEnv', () => {
       selected: 'dev',
       defaulted: false,
       source: 'credentials-file',
+      apiUrl: API_BASE_URLS.dev,
       token: 'dd_file_dev',
     });
   });
@@ -139,9 +140,9 @@ describe('resolveEnv', () => {
       {
         version: 1,
         credentials: {
-          [ENVIRONMENT_BASE_URLS.prod]: {
+          [OAUTH_BASE_URLS.prod]: {
+            apiUrl: API_BASE_URLS.prod,
             dd_ingest_token: 'dd_file_prod',
-            access_token: 'access_prod',
             client_id: 'client_prod',
             created_at: '2026-08-15T00:00:00.000Z',
           },

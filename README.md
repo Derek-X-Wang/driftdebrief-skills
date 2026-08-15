@@ -30,7 +30,9 @@ bunx @driftdebrief/skills install   # prints the exact snippet + commands
 
 The CLI + MCP server are on npm as [`@driftdebrief/skills`](https://www.npmjs.com/package/@driftdebrief/skills) — `bunx @driftdebrief/skills <cmd>` works anywhere Bun is installed (from a clone, substitute `bun src/cli.ts`).
 
-`auth login` uses browser OAuth with PKCE, lets you choose a Workspace and consent, then saves the resulting ingest credential in `~/.config/driftdebrief/credentials.json` with `0600` permissions. Use `auth status` to inspect a masked token and `auth logout` for best-effort remote revocation plus local removal. `DRIFTDEBRIEF_ENV=dev|prod` selects the saved environment; unset defaults to **prod**.
+`auth login` uses browser OAuth with PKCE, lets you choose a Workspace and consent, then saves the resulting ingest credential in `${XDG_CONFIG_HOME:-~/.config}/driftdebrief/credentials.json` with `0600` permissions. Use `auth status` to inspect the saved credential and the effective winning config tier. `auth logout` calls the ingest API's `/api/tokens/revoke` endpoint when the server supports it, then always removes the local entry; if remote revocation is unavailable, the CLI warns you to revoke the token in the web UI.
+
+Re-login reuses the saved public OAuth client when possible, but it mints a new `dd_` token. The prior token remains live until you run `auth logout` (which revokes sibling tokens through the consent) or revoke it in the web UI.
 
 Existing environment configuration remains supported with unchanged precedence: the bare `DRIFTDEBRIEF_API_URL` + `DRIFTDEBRIEF_TOKEN` pair wins first, then the selected `_DEV`/`_PROD` profile pair, then the credentials file. Verify the effective environment and source with `bunx @driftdebrief/skills env`. Work normally, then run **`/dd-sync`** to reconcile.
 
