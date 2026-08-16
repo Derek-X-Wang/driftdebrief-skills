@@ -1,10 +1,10 @@
 {
   "name": "@driftdebrief/skills",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publishConfig": {
     "access": "public"
   },
-  "description": "Coding-agent integration for DriftDebrief — emit, retrieve, and manage debrief cards from Claude Code, Codex, Cursor, and other harnesses.",
+  "description": "Coding-agent integration for DriftDebrief \u2014 emit, retrieve, and manage debrief cards from Claude Code, Codex, Cursor, and other harnesses.",
   "license": "MIT",
   "type": "module",
   "repository": {
